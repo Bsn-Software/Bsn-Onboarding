@@ -1,0 +1,380 @@
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+
+// ─────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────
+
+export type ChecklistTemplate = {
+  id: string
+  phase: string
+  category: string
+  label: string
+  description: string | null
+  due_offset: string | null
+  is_document: boolean
+  is_conditional: boolean
+  condition_label: string | null
+  headquarters_only: boolean
+  is_required: boolean
+  order_index: number
+}
+
+export type Completion = {
+  id: string
+  checklist_id: string
+  template_id: string
+  completed_by: string | null
+  completed_at: string | null
+  notes: string | null
+  is_not_applicable: boolean
+}
+
+export type CollaboratorRow = {
+  checklist_id: string
+  phase: string
+  status: string
+  entry_date: string | null
+  exit_date: string | null
+  hr_notes: string | null
+  collaborator: {
+    id: string
+    first_name: string | null
+    last_name: string | null
+    email: string
+    job_title: string | null
+    is_headquarters: boolean
+    manager: { first_name: string | null; last_name: string | null } | null
+  }
+  completions: Completion[]
+  documents: { type: string; status: string; file_url: string; file_name: string }[]
+  total_items: number
+  completed_items: number
+}
+
+// ─────────────────────────────────────────────────────────────
+// Récupère la liste de tous les collaborateurs avec progression
+// ─────────────────────────────────────────────────────────────
+export async function getCollaborators(): Promise<CollaboratorRow[]> {
+  const supabase = await createClient()
+
+  // Vérifier que l'utilisateur connecté est RH
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Non authentifié')
+
+  // Récupérer les dossiers avec les profils et les complétions
+  const { data, error } = await supabase
+    .from('onboarding_checklists')
+    .select(`
+      id,
+      phase,
+      status,
+      entry_date,
+      exit_date,
+      hr_notes,
+      collaborator:profiles!collaborator_id (
+        id,
+        first_name,
+        last_name,
+        email,
+        job_title,
+        is_headquarters,
+        manager:profiles!manager_id (
+          first_name,
+          last_name
+        )
+      ),
+      completions:checklist_completions (
+        id,
+        checklist_id,
+        template_id,
+        completed_by,
+        completed_at,
+        notes,
+        is_not_applicable
+      ),
+      documents:onboarding_documents (
+        type,
+        status,
+        file_url,
+        file_name
+      )
+    `)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('Erreur getCollaborators:', error)
+    throw error
+  }
+
+  // Récupérer le nombre total d'items actifs par phase
+  const { data: templates } = await supabase
+    .from('checklist_item_templates')
+    .select('id, phase')
+    .eq('is_active', true)
+
+  const entryCount = templates?.filter(t => t.phase === 'entry').length ?? 0
+  const exitCount = templates?.filter(t => t.phase === 'exit').length ?? 0
+
+  return (data ?? []).map((row: any) => {
+    const totalItems = row.phase === 'entry' ? entryCount : exitCount
+    
+    const completedItems = (row.completions ?? []).filter(
+      (c: Completion) => c.completed_at !== null && !c.is_not_applicable
+    ).length
+    
+    // Pour calculer la progression, on compte un document comme complété s'il est validé
+    const validatedDocsCount = (row.documents ?? []).filter(
+      (d: any) => d.status === 'validated' || d.status === 'pending'
+    ).length
+    
+    // On s'assure qu'on a un seul document par type
+    const uniqueDocsMap = new Map();
+    (row.documents ?? []).forEach((doc: any) => {
+      // Si on a déjà ce type, on le garde si c'est le plus récent (on suppose l'ordre décroissant, mais la base peut renvoyer n'importe quoi. On garde le premier vu, ou on écrase)
+      // Pour simplifier, on écrase pour avoir le dernier de la liste
+      uniqueDocsMap.set(doc.type, doc);
+    });
+    const uniqueDocs = Array.from(uniqueDocsMap.values());
+
+    const actualValidatedDocsCount = uniqueDocs.filter(
+      (d: any) => d.status === 'validated' || d.status === 'pending'
+    ).length;
+
+    return {
+      checklist_id: row.id,
+      phase: row.phase,
+      status: row.status,
+      entry_date: row.entry_date,
+      exit_date: row.exit_date,
+      hr_notes: row.hr_notes,
+      collaborator: Array.isArray(row.collaborator) ? row.collaborator[0] : row.collaborator,
+      completions: row.completions ?? [],
+      documents: uniqueDocs,
+      total_items: totalItems,
+      completed_items: completedItems + actualValidatedDocsCount,
+    }
+  })
+}
+
+// ─────────────────────────────────────────────────────────────
+// Récupère tous les templates actifs organisés par catégorie
+// ─────────────────────────────────────────────────────────────
+export async function getTemplates(phase = 'entry'): Promise<ChecklistTemplate[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('checklist_item_templates')
+    .select('*')
+    .eq('phase', phase)
+    .eq('is_active', true)
+    .order('category')
+    .order('order_index')
+
+  if (error) throw error
+  return data ?? []
+}
+
+// ─────────────────────────────────────────────────────────────
+// Coche ou décoche un item de checklist
+// ─────────────────────────────────────────────────────────────
+export async function toggleChecklistItem(
+  checklistId: string,
+  templateId: string,
+  checked: boolean
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Non authentifié')
+
+  if (checked) {
+    // Upsert : créer ou mettre à jour
+    const { error } = await supabase
+      .from('checklist_completions')
+      .upsert({
+        checklist_id: checklistId,
+        template_id: templateId,
+        completed_by: user.id,
+        completed_at: new Date().toISOString(),
+      }, { onConflict: 'checklist_id,template_id' })
+
+    if (error) throw error
+  } else {
+    // Décocher = remettre completed_at à null
+    const { error } = await supabase
+      .from('checklist_completions')
+      .update({ completed_at: null, completed_by: null })
+      .eq('checklist_id', checklistId)
+      .eq('template_id', templateId)
+
+    if (error) throw error
+  }
+
+  return { success: true }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Met à jour les notes RH d'un dossier
+// ─────────────────────────────────────────────────────────────
+export async function updateHrNotes(checklistId: string, notes: string) {
+  const supabase = await createClient()
+
+  const { error } = await supabase
+    .from('onboarding_checklists')
+    .update({ hr_notes: notes })
+    .eq('id', checklistId)
+
+  if (error) throw error
+  return { success: true }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Crée un nouveau dossier d'onboarding pour un collaborateur
+// ─────────────────────────────────────────────────────────────
+export async function createOnboardingChecklist(
+  collaboratorId: string,
+  phase: 'entry' | 'exit',
+  entryDate?: string
+) {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('onboarding_checklists')
+    .insert({
+      collaborator_id: collaboratorId,
+      phase,
+      entry_date: entryDate,
+      status: 'in_progress',
+    })
+    .select('id')
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// ─────────────────────────────────────────────────────────────
+// Récupère les données complètes pour la vue Timeline d'un collaborateur
+// ─────────────────────────────────────────────────────────────
+export async function getCollaboratorTimeline(checklistId: string) {
+  const supabase = await createClient()
+
+  // 1. Fetch checklist & collaborator
+  const { data: checklist, error: chkError } = await supabase
+    .from('onboarding_checklists')
+    .select(`
+      id, phase, status, entry_date,
+      collaborator:profiles!collaborator_id (
+        id, first_name, last_name, email, job_title, is_headquarters
+      ),
+      completions:checklist_completions (
+        template_id, completed_at
+      )
+    `)
+    .eq('id', checklistId)
+    .single()
+
+  if (chkError || !checklist) throw new Error('Checklist introuvable')
+
+  const collab = Array.isArray(checklist.collaborator) ? checklist.collaborator[0] : checklist.collaborator
+
+  // 2. Fetch Templates
+  const { data: templates } = await supabase
+    .from('checklist_item_templates')
+    .select('*')
+    .eq('phase', checklist.phase)
+    .eq('is_active', true)
+    .order('order_index')
+
+  // 3. Fetch Documents
+  const { data: docs } = await supabase
+    .from('onboarding_documents')
+    .select('type, status, file_url, file_name')
+    .eq('checklist_id', checklistId)
+
+  // Construction de la timeline
+  const catLabels: Record<string, string> = {
+    administrative: 'Administratif',
+    documents: 'Documents',
+    health: 'Santé',
+    it: 'Équipement IT',
+    communication: 'Communication',
+    compliance: 'Conformité'
+  }
+
+  // Grouper les templates par catégorie (en ignorant 'documents' qui sera traité à part ou fusionné)
+  const groupedTemplates = (templates || []).reduce<Record<string, any[]>>((acc, t) => {
+    if (!acc[t.category]) acc[t.category] = []
+
+    const isCompleted = checklist.completions.some((c: any) => c.template_id === t.id && c.completed_at)
+
+    acc[t.category].push({
+      id: t.id,
+      label: t.label,
+      done: isCompleted
+    })
+    return acc
+  }, {})
+
+  // Construire le format attendu par la timeline
+  const timeline = []
+
+  // Parcourir les catégories dans un ordre logique
+  const orderedCats = ['documents', 'administrative', 'health', 'it', 'ead', 'communication', 'compliance']
+
+  let totalItems = 0
+  let completedItems = 0
+
+  for (const cat of orderedCats) {
+    const items = groupedTemplates[cat] || []
+
+    // Ajout spécifique pour la catégorie documents : on fusionne les statuts
+    if (cat === 'documents') {
+      // Les items contiennent déjà les templates de documents grâce au select de checklist_item_templates
+      // Il suffit de mettre à jour le champ "done" et "status" et "docUrl" pour chaque template
+      items.forEach((item: any) => {
+        const type = item.id // le type du document est l'id du template
+        const uploadedDoc = docs?.find(d => d.type === type)
+        const isDone = uploadedDoc?.status === 'validated'
+        const publicUrl = uploadedDoc?.file_url ? supabase.storage.from('onboarding_documents').getPublicUrl(uploadedDoc.file_url).data.publicUrl : null
+
+        item.type = type
+        item.done = isDone
+        item.status = uploadedDoc?.status || 'missing'
+        item.docUrl = publicUrl
+        // L'id pour le DOM peut rester `doc-${type}` ou on utilise l'id du template
+        // On va garder `doc-${type}` par convention pour le frontend s'il se base dessus
+        item.id = `doc-${type}`
+      })
+    }
+
+    if (items.length === 0) continue
+
+    const catTotal = items.length
+    const catDone = items.filter(i => i.done).length
+
+    totalItems += catTotal
+    completedItems += catDone
+
+    let status = 'pending'
+    if (catDone === catTotal) status = 'completed'
+    else if (catDone > 0) status = 'in_progress'
+
+    timeline.push({
+      category: cat,
+      label: catLabels[cat] || cat,
+      status,
+      items
+    })
+  }
+
+  const progress = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0
+
+  return {
+    checklistId,
+    collaborator: collab,
+    progress,
+    timeline
+  }
+}

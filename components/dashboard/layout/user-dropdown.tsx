@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react"
 import { ChevronDown, LogOut, Settings, UserRound } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 import { cn } from "@/lib/utils"
-import { InitialsAvatar } from "./initials-avatar"
+import { InitialsAvatar } from '../shared/initials-avatar'
+import { createClient } from "@/lib/supabase/client"
 
 type CurrentUser = {
   name: string
@@ -13,8 +15,15 @@ type CurrentUser = {
 }
 
 export function UserDropdown({ user }: { user: CurrentUser }) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
   useEffect(() => {
     function handleClick(event: MouseEvent) {
@@ -81,7 +90,7 @@ export function UserDropdown({ user }: { user: CurrentUser }) {
             <MenuItem icon={Settings} label="Préférences" />
           </div>
           <div className="border-t border-slate-200 p-1">
-            <MenuItem icon={LogOut} label="Se déconnecter" destructive />
+            <MenuItem icon={LogOut} label="Se déconnecter" destructive onClick={handleLogout} />
           </div>
         </div>
       )}
@@ -93,15 +102,18 @@ function MenuItem({
   icon: Icon,
   label,
   destructive,
+  onClick,
 }: {
   icon: typeof UserRound
   label: string
   destructive?: boolean
+  onClick?: () => void
 }) {
   return (
     <button
       type="button"
       role="menuitem"
+      onClick={onClick}
       className={cn(
         "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#00b2de]",
         destructive

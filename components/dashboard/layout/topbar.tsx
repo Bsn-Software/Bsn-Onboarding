@@ -27,7 +27,7 @@ export function Topbar({
         <div className="flex items-center gap-4 shrink-0">
           <AppLauncher align="start" apiUrl="https://portail-bsn.netlify.app/api/apps" />
           <div className="border-l border-white/20 pl-4 hidden sm:block">
-            <img src="/logo-white.png" alt="BSN Logo" className="h-18 w-auto object-contain hover:scale-105 transition-transform duration-300" />
+            <img src="/logo-white.png" alt="BSN Logo" className="h-17 w-auto object-contain hover:scale-105 transition-transform duration-300" />
           </div>
         </div>
 

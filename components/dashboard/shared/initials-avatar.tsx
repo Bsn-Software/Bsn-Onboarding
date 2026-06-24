@@ -11,16 +11,19 @@ function getInitials(name: string) {
 
 export function InitialsAvatar({
   name,
+  size = "sm",
   className,
 }: {
   name: string
+  size?: "sm" | "lg"
   className?: string
 }) {
   return (
     <span
       aria-hidden="true"
       className={cn(
-        "inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-[#00b2de] text-xs font-semibold text-white select-none",
+        "inline-flex shrink-0 items-center justify-center rounded-full bg-[#00b2de] font-semibold text-white select-none",
+        size === "lg" ? "size-11 text-base" : "size-8 text-xs",
         className,
       )}
     >

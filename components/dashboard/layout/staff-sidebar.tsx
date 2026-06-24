@@ -66,9 +66,15 @@ export function StaffSidebar({
           <li>
             <button
               type="button"
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-600 transition-colors outline-none hover:bg-slate-100 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-[#00b2de]"
+              onClick={() => onSelect('parametres')}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[#00b2de]",
+                activeId === 'parametres'
+                  ? "bg-[#00b2de]/10 text-[#00b2de]"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+              )}
             >
-              <Settings className="size-4 shrink-0" />
+              <Settings className={cn("size-4 shrink-0", activeId === 'parametres' ? "text-[#00b2de]" : "text-slate-400")} />
               <span>Paramètres</span>
             </button>
           </li>

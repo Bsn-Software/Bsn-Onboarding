@@ -5,7 +5,7 @@ import { CheckCircle2, ChevronDown, ChevronRight, X, ExternalLink, Check, Bell, 
 import { cn } from '@/lib/utils'
 import type { ChecklistTemplate, CollaboratorRow, Completion } from '@/app/actions/checklist'
 import { toggleChecklistItem, updateHrNotes } from '@/app/actions/checklist'
-import { updateDocumentStatus, sendDocumentReminder } from '@/app/actions/documents'
+import { updateDocumentStatus, sendDocumentReminder, sendGroupedDocumentReminder, toggleDocument } from '@/app/actions/documents'
 import { createClient } from '@/lib/supabase/client'
 import { InitialsAvatar } from '../shared/initials-avatar'
 import { toast } from 'sonner'
@@ -274,6 +274,8 @@ function DocumentCategory({ templates, documents, checklistId, collaboratorId, i
   const meta = CATEGORY_LABELS['documents']
   const supabase = createClient()
   const [sendingReminder, setSendingReminder] = useState<string | null>(null)
+  const [sendingGroupReminder, setSendingGroupReminder] = useState(false)
+  const [isTogglingDoc, setIsTogglingDoc] = useState(false)
 
   const items = (templates || []).map((req: any) => {
     const doc = documents?.find((d: any) => d.type === req.id)
@@ -281,6 +283,22 @@ function DocumentCategory({ templates, documents, checklistId, collaboratorId, i
   })
 
   const doneCount = items.filter(i => i.doc?.status === 'validated' || i.doc?.status === 'pending').length
+
+  const handleDocumentToggle = async (type: string, currentStatus: string | undefined) => {
+    setIsTogglingDoc(true)
+    try {
+      const res = await toggleDocument(checklistId, type, currentStatus)
+      if (res.error) {
+        toast.error(`Erreur: ${res.error}`)
+      } else {
+        onRefresh()
+      }
+    } catch (e) {
+      toast.error('Erreur inattendue')
+    } finally {
+      setIsTogglingDoc(false)
+    }
+  }
 
   const handleValidate = async (type: string, status: 'validated' | 'rejected') => {
     await updateDocumentStatus(checklistId, type, status)
@@ -305,6 +323,24 @@ function DocumentCategory({ templates, documents, checklistId, collaboratorId, i
     }
   }
 
+  const handleGroupRemind = async () => {
+    if (!collaboratorId) return
+    setSendingGroupReminder(true)
+    
+    try {
+      const result = await sendGroupedDocumentReminder(collaboratorId)
+      if (result.error) {
+        toast.error(`Erreur : ${result.error}`)
+      } else {
+        toast.success(`${result.count} document(s) relancé(s)`)
+      }
+    } catch (err) {
+      toast.error("Erreur inattendue")
+    } finally {
+      setSendingGroupReminder(false)
+    }
+  }
+
   const getPublicUrl = (path: string) => {
     return supabase.storage.from('onboarding_documents').getPublicUrl(path).data.publicUrl
   }
@@ -326,93 +362,110 @@ function DocumentCategory({ templates, documents, checklistId, collaboratorId, i
       </button>
 
       {isOpen && (
-        <ul className="divide-y divide-slate-100">
-          {items.map(item => {
-            const isDone = item.doc?.status === 'validated' || item.doc?.status === 'pending'
-            const isPending = item.doc?.status === 'pending'
-            const isRejected = item.doc?.status === 'rejected'
-            
-            return (
-              <li key={item.type} className={cn(
-                'flex flex-col gap-2 px-4 py-3 transition-colors',
-                isDone ? 'bg-[#00b2de]/5' : 'bg-white hover:bg-slate-50'
-              )}>
-                <div className="flex items-start gap-3">
-                  <div className={cn(
-                    'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2',
-                    isDone ? 'border-[#00b2de] bg-[#00b2de] text-white' : 'border-slate-300 bg-white'
-                  )}>
-                    {isDone && <CheckCircle2 className="size-3.5" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className={cn(
-                      'text-sm leading-snug',
-                      isDone && !isPending ? 'text-slate-400 line-through' : 'text-slate-800 font-medium'
-                    )}>
-                      {item.label}
-                      {isPending && <span className="ml-2 text-xs font-semibold text-amber-500">En attente de validation</span>}
-                      {isRejected && <span className="ml-2 text-xs font-semibold text-red-500">Refusé</span>}
-                      {!item.doc && <span className="ml-2 text-xs text-slate-400">Manquant</span>}
-                    </p>
-                    
-                    
-                    {item.doc?.file_url ? (
-                      <div className="mt-2 flex items-center gap-2">
-                        <a 
-                          href={getPublicUrl(item.doc.file_url)} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 text-xs text-[#00b2de] hover:underline"
-                        >
-                          <ExternalLink className="size-3" />
-                          Voir le document
-                        </a>
-                        
-                        {isPending && (
-                          <div className="flex items-center gap-1.5 ml-auto">
+        <div className="bg-white">
+          <div className="flex justify-end p-3 border-b border-slate-100">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleGroupRemind(); }}
+              disabled={sendingGroupReminder || doneCount === items.length}
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-amber-600 bg-slate-50 hover:bg-amber-50 px-2 py-1.5 rounded-md transition-colors disabled:opacity-50 disabled:pointer-events-none"
+            >
+              {sendingGroupReminder ? <Loader2 className="size-3 animate-spin" /> : <Bell className="size-3" />}
+              Tout relancer
+            </button>
+          </div>
+          <ul className="divide-y divide-slate-100">
+            {items.map(item => {
+              const isDone = item.doc?.status === 'validated' || item.doc?.status === 'pending'
+              const isPending = item.doc?.status === 'pending'
+              const isRejected = item.doc?.status === 'rejected'
+              
+              return (
+                <li key={item.type} className={cn(
+                  'flex flex-col gap-2 px-4 py-3 transition-colors',
+                  isDone ? 'bg-[#00b2de]/5' : 'bg-white hover:bg-slate-50'
+                )}>
+                  <div className="flex items-start gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleDocumentToggle(item.type, item.doc?.status)}
+                      disabled={isTogglingDoc}
+                      className={cn(
+                        'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors cursor-pointer',
+                        isDone ? 'border-[#00b2de] bg-[#00b2de] text-white hover:bg-[#0092b8]' : 'border-slate-300 bg-white hover:border-[#00b2de]'
+                      )}
+                    >
+                      {isDone && <CheckCircle2 className="size-3.5" />}
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <p className={cn(
+                        'text-sm leading-snug',
+                        isDone && !isPending ? 'text-slate-400 line-through' : 'text-slate-800 font-medium'
+                      )}>
+                        {item.label}
+                        {isPending && <span className="ml-2 text-xs font-semibold text-amber-500">En attente de validation</span>}
+                        {isRejected && <span className="ml-2 text-xs font-semibold text-red-500">Refusé</span>}
+                        {!item.doc && <span className="ml-2 text-xs text-slate-400">Manquant</span>}
+                      </p>
+                      
+                      
+                      {item.doc?.file_url ? (
+                        <div className="mt-2 flex items-center gap-2">
+                          <a 
+                            href={getPublicUrl(item.doc.file_url)} 
+                            target="_blank" 
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 text-xs text-[#00b2de] hover:underline"
+                          >
+                            <ExternalLink className="size-3" />
+                            Voir le document
+                          </a>
+                          
+                          {isPending && (
+                            <div className="flex items-center gap-1.5 ml-auto">
+                              <button
+                                onClick={() => handleValidate(item.type, 'validated')}
+                                className="inline-flex items-center justify-center rounded bg-emerald-100 p-1.5 text-emerald-700 hover:bg-emerald-200 transition-colors"
+                                title="Valider"
+                              >
+                                <Check className="size-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleValidate(item.type, 'rejected')}
+                                className="inline-flex items-center justify-center rounded bg-red-100 p-1.5 text-red-700 hover:bg-red-200 transition-colors"
+                                title="Refuser"
+                              >
+                                <X className="size-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        (!item.doc || isRejected) && (
+                          <div className="mt-2 flex justify-end">
                             <button
-                              onClick={() => handleValidate(item.type, 'validated')}
-                              className="inline-flex items-center justify-center rounded bg-emerald-100 p-1.5 text-emerald-700 hover:bg-emerald-200 transition-colors"
-                              title="Valider"
+                              onClick={() => handleRemind(item.type, item.label)}
+                              disabled={sendingReminder === item.type}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
                             >
-                              <Check className="size-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleValidate(item.type, 'rejected')}
-                              className="inline-flex items-center justify-center rounded bg-red-100 p-1.5 text-red-700 hover:bg-red-200 transition-colors"
-                              title="Refuser"
-                            >
-                              <X className="size-3.5" />
+                              {sendingReminder === item.type ? (
+                                <Loader2 className="size-3.5 animate-spin text-[#00b2de]" />
+                              ) : (
+                                <Bell className="size-3.5 text-[#00b2de]" />
+                              )}
+                              Relancer
                             </button>
                           </div>
-                        )}
-                      </div>
-                    ) : (
-                      (!item.doc || isRejected) && (
-                        <div className="mt-2 flex justify-end">
-                          <button
-                            onClick={() => handleRemind(item.type, item.label)}
-                            disabled={sendingReminder === item.type}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
-                          >
-                            {sendingReminder === item.type ? (
-                              <Loader2 className="size-3.5 animate-spin text-[#00b2de]" />
-                            ) : (
-                              <Bell className="size-3.5 text-[#00b2de]" />
-                            )}
-                            Relancer
-                          </button>
-                        </div>
-                      )
-                    )}
+                        )
+                      )}
+                    </div>
                   </div>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       )}
     </div>
   )
 }
-

@@ -27,7 +27,7 @@ export default async function Page() {
   }
 
   if (profile?.role === 'collaborator') {
-    return <CollaboratorView />
+    return <CollaboratorView user={currentUser} />
   }
 
   return <DashboardShell user={currentUser} />

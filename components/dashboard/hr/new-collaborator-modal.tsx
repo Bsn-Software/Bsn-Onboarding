@@ -169,12 +169,20 @@ export function NewCollaboratorModal({ onClose, onCreated }: Props) {
                 <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
                   Date d'entrée
                 </label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                <div 
+                  className="relative cursor-pointer"
+                  onClick={(e) => {
+                    const input = e.currentTarget.querySelector('input')
+                    if (input && 'showPicker' in input) {
+                      try { input.showPicker() } catch (err) {}
+                    }
+                  }}
+                >
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
                   <input
                     name="entry_date"
                     type="date"
-                    className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-[#00b2de] focus:bg-white focus:ring-2 focus:ring-[#00b2de]/20"
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-[#00b2de] focus:bg-white focus:ring-2 focus:ring-[#00b2de]/20 cursor-pointer"
                   />
                 </div>
               </div>

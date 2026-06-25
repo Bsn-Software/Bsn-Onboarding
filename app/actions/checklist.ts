@@ -257,7 +257,7 @@ export async function createOnboardingChecklist(
 // ─────────────────────────────────────────────────────────────
 // Récupère les données complètes pour la vue Timeline d'un collaborateur
 // ─────────────────────────────────────────────────────────────
-export async function getCollaboratorTimeline(checklistId: string) {
+export async function getCollaboratorTimeline(checklistId: string, isCollaborator: boolean = false) {
   const supabase = await createClient()
 
   // 1. Fetch checklist & collaborator
@@ -305,6 +305,9 @@ export async function getCollaboratorTimeline(checklistId: string) {
 
   // Grouper les templates par catégorie (en ignorant 'documents' qui sera traité à part ou fusionné)
   const groupedTemplates = (templates || []).reduce<Record<string, any[]>>((acc, t) => {
+    // Si la requête vient du portail collaborateur et que la tâche est interne RH, on l'ignore
+    if (isCollaborator && t.hr_only) return acc
+
     if (!acc[t.category]) acc[t.category] = []
 
     const isCompleted = checklist.completions.some((c: any) => c.template_id === t.id && c.completed_at)
@@ -312,7 +315,8 @@ export async function getCollaboratorTimeline(checklistId: string) {
     acc[t.category].push({
       id: t.id,
       label: t.label,
-      done: isCompleted
+      done: isCompleted,
+      hr_only: t.hr_only
     })
     return acc
   }, {})
@@ -373,8 +377,36 @@ export async function getCollaboratorTimeline(checklistId: string) {
 
   return {
     checklistId,
+    phase: checklist.phase,
     collaborator: collab,
     progress,
     timeline
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Initier la sortie d'un collaborateur
+// ─────────────────────────────────────────────────────────────
+export async function initiateOffboarding(collaboratorId: string, exitDate?: string) {
+  const supabase = await createClient()
+
+  // Créer une nouvelle checklist avec phase='exit'
+  const { data, error } = await supabase
+    .from('onboarding_checklists')
+    .insert({
+      collaborator_id: collaboratorId,
+      phase: 'exit',
+      status: 'in_progress',
+      exit_date: exitDate || null
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Erreur initiateOffboarding:', error)
+    return { error: 'Erreur lors de la création du suivi de sortie' }
+  }
+
+  revalidatePath('/')
+  return { data }
 }

@@ -17,7 +17,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { updateDocumentStatus, sendDocumentReminder } from '@/app/actions/documents'
+import { updateDocumentStatus, sendDocumentReminder, sendGroupedDocumentReminder, toggleDocument } from '@/app/actions/documents'
 import { toast } from 'sonner'
 
 export const CATEGORY_COLORS: Record<string, { bg: string, text: string, border: string, fill: string }> = {
@@ -101,23 +101,53 @@ export function TimelineSCurve({ data, onToggleItem, onRefresh }: TimelineSCurve
   const [selectedStep, setSelectedStep] = useState<any>(null)
   const [sendingReminder, setSendingReminder] = useState<string | null>(null)
   const [processingDoc, setProcessingDoc] = useState<string | null>(null)
+  const [sendingGroupReminder, setSendingGroupReminder] = useState(false)
   
   const checklistId = data?.checklistId
   const collaboratorId = data?.collaborator?.id
 
-  // Mettre à jour le selectedStep si les données changent en arrière-plan
+  // On écoute les changements props pour actualiser la modale si elle est ouverte
   useEffect(() => {
-    if (selectedStep && data?.timeline) {
-      const updatedStep = data.timeline.find((s: any) => s.category === selectedStep.category)
+    if (selectedStep) {
+      const updatedStep = data?.timeline?.find((s: any) => s.category === selectedStep.category)
       if (updatedStep) {
         setSelectedStep(updatedStep)
       }
     }
-  }, [data?.timeline])
+  }, [data])
 
-  const handleToggle = async (itemId: string, currentDone: boolean) => {
-    // Les documents ne se cochent pas manuellement ici
-    if (itemId.startsWith('doc-')) return
+  const handleGroupRemind = async () => {
+    if (!collaboratorId) return
+    setSendingGroupReminder(true)
+    
+    try {
+      const result = await sendGroupedDocumentReminder(collaboratorId)
+      if (result.error) {
+        toast.error(`Erreur : ${result.error}`)
+      } else {
+        toast.success(`${result.count} document(s) relancé(s)`)
+      }
+    } catch (err) {
+      toast.error("Erreur inattendue")
+    } finally {
+      setSendingGroupReminder(false)
+    }
+  }
+
+  const handleToggle = async (itemId: string, currentDone: boolean, isDoc?: boolean, currentStatus?: string) => {
+    if (isDoc) {
+      setProcessingDoc(itemId)
+      try {
+        const res = await toggleDocument(checklistId, itemId, currentStatus)
+        if (res.error) toast.error(`Erreur: ${res.error}`)
+        else onRefresh?.()
+      } catch(e) {
+        toast.error('Erreur inattendue')
+      } finally {
+        setProcessingDoc(null)
+      }
+      return
+    }
 
     // Optimistic update
     if (selectedStep) {
@@ -253,12 +283,24 @@ export function TimelineSCurve({ data, onToggleItem, onRefresh }: TimelineSCurve
                   <p className="text-xs text-slate-500">{selectedStep.items.filter((i: any) => i.done).length} sur {selectedStep.items.length} tâches terminées</p>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedStep(null)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
-              >
-                <X className="size-5" />
-              </button>
+              <div className="flex items-center gap-3">
+                {selectedStep.category === 'documents' && (
+                  <button
+                    onClick={handleGroupRemind}
+                    disabled={sendingGroupReminder}
+                    className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-amber-600 bg-slate-50 hover:bg-amber-50 px-2 py-1.5 rounded-md transition-colors disabled:opacity-50"
+                  >
+                    {sendingGroupReminder ? <Loader2 className="size-3 animate-spin" /> : <Bell className="size-3" />}
+                    Tout relancer
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedStep(null)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
             </div>
 
             <div className="p-5 overflow-y-auto">
@@ -268,16 +310,21 @@ export function TimelineSCurve({ data, onToggleItem, onRefresh }: TimelineSCurve
                   return (
                     <li
                       key={i}
-                      onClick={() => !isDoc && handleToggle(item.id, item.done)}
+                      onClick={() => {
+                        if (isDoc && processingDoc === item.id) return;
+                        handleToggle(item.id, item.done, isDoc, item.status)
+                      }}
                       className={cn(
-                        "flex items-center justify-between p-3 rounded-xl border transition-colors",
-                        isDoc ? "border-slate-100 bg-slate-50" : "border-slate-200 bg-white hover:border-[#00b2de]/40 hover:bg-slate-50 cursor-pointer"
+                        "flex items-center justify-between p-3 rounded-xl border transition-colors cursor-pointer",
+                        "border-slate-200 bg-white hover:border-[#00b2de]/40 hover:bg-slate-50",
+                        (isDoc && processingDoc === item.id) && "opacity-50 pointer-events-none"
                       )}
                     >
                       <div className="flex items-center gap-3">
                         <div className={cn(
                           "flex size-6 items-center justify-center rounded-full shrink-0 transition-colors",
-                          item.done ? "bg-[#00b2de] text-white" : "border border-slate-300 bg-white text-transparent"
+                          item.done ? "bg-[#00b2de] text-white" : "border border-slate-300 bg-white text-transparent",
+                          (isDoc && processingDoc === item.id) && "animate-pulse"
                         )}>
                           <CheckCircle2 className="size-3.5" />
                         </div>

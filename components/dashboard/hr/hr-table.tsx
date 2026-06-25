@@ -94,7 +94,7 @@ function MiniProgress({ value }: { value: number }) {
 // ─────────────────────────────────────────────────────────────
 // Composant principal : tableau RH
 // ─────────────────────────────────────────────────────────────
-export function HRTable({ onViewDetail }: { onViewDetail?: (checklistId: string) => void }) {
+export function HRTable({ onViewDetail, phase = 'entry' }: { onViewDetail?: (checklistId: string) => void, phase?: 'entry' | 'exit' }) {
   const [rows, setRows] = useState<CollaboratorRow[]>([])
   const [templates, setTemplates] = useState<ChecklistTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -106,19 +106,20 @@ export function HRTable({ onViewDetail }: { onViewDetail?: (checklistId: string)
 
   const load = useCallback(() => {
     setLoading(true)
-    Promise.all([getCollaborators(), getTemplates('entry')]).then(([c, t]) => {
-      setRows(c)
+    Promise.all([getCollaborators(), getTemplates(phase)]).then(([c, t]) => {
+      const filteredCollabs = c.filter(row => row.phase === phase)
+      setRows(filteredCollabs)
       setTemplates(t)
       // Mettre à jour le slide-over si ouvert
       if (selectedRow) {
-        const updated = c.find(r => r.checklist_id === selectedRow.checklist_id)
+        const updated = filteredCollabs.find(r => r.checklist_id === selectedRow.checklist_id)
         if (updated) setSelectedRow(updated)
       }
       setLoading(false)
     }).catch(() => setLoading(false))
-  }, [selectedRow?.checklist_id])
+  }, [selectedRow?.checklist_id, phase])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [load])
 
   // Filtrage
   const filtered = rows.filter(row => {

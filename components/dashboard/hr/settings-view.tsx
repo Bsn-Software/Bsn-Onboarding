@@ -1,19 +1,21 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit2, Trash2, Save, X, Loader2, CheckCircle2, GripVertical } from 'lucide-react'
+import { Plus, Edit2, Trash2, Save, X, Loader2, CheckCircle2, GripVertical, ChevronDown, ChevronRight } from 'lucide-react'
 import { getAllTemplates, createTemplate, updateTemplate, deleteTemplate, updateTemplatesOrder } from '@/app/actions/templates'
 import type { ChecklistTemplate } from '@/app/actions/checklist'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
+import { CATEGORY_COLORS } from './timeline-s-curve'
+
 const CATEGORIES = [
   { id: 'documents', label: 'Documents' },
   { id: 'administrative', label: 'Administratif' },
-  { id: 'health', label: 'Santé' },
-  { id: 'it', label: 'Équipement IT' },
+  { id: 'health', label: 'Santé & Sécurité' },
+  { id: 'it', label: 'Matériel & IT' },
   { id: 'communication', label: 'Communication' },
-  { id: 'compliance', label: 'Conformité' }
+  { id: 'compliance', label: 'Conformité' },
 ]
 
 export function SettingsView() {
@@ -31,6 +33,17 @@ export function SettingsView() {
   // Drag & Drop State
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null)
+
+  // Accordion State
+  const [openCategories, setOpenCategories] = useState<Set<string>>(new Set())
+
+  const toggleCategory = (cat: string) => {
+    setOpenCategories(prev => {
+      const next = new Set(prev)
+      next.has(cat) ? next.delete(cat) : next.add(cat)
+      return next
+    })
+  }
 
   const loadData = () => {
     setLoading(true)
@@ -61,6 +74,7 @@ export function SettingsView() {
       is_required: true,
       is_conditional: false,
       headquarters_only: false,
+      hr_only: false,
       order_index: 0
     })
   }
@@ -253,6 +267,16 @@ export function SettingsView() {
           />
           Siège uniquement
         </label>
+        
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+          <input 
+            type="checkbox" 
+            checked={formData.hr_only ?? false}
+            onChange={e => setFormData({...formData, hr_only: e.target.checked})}
+            className="rounded border-slate-300 text-[#00b2de] focus:ring-[#00b2de]"
+          />
+          Masqué au collaborateur (Interne RH)
+        </label>
       </div>
 
       <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
@@ -275,7 +299,7 @@ export function SettingsView() {
   )
 
   return (
-    <div className="flex flex-col h-full w-full max-w-5xl mx-auto py-8">
+    <div className="flex flex-col min-h-full w-full max-w-5xl mx-auto py-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Paramètres des Modèles</h1>
         <p className="text-slate-500 mt-1">Gérez les documents et tâches demandés lors de l'intégration ou du départ.</p>
@@ -324,26 +348,38 @@ export function SettingsView() {
       {loading ? (
         <div className="py-20 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>
       ) : (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="w-10 px-2 py-3"></th>
-                  <th className="px-4 py-3 font-semibold text-slate-600">Ordre</th>
-                  <th className="px-4 py-3 font-semibold text-slate-600">Catégorie</th>
-                  <th className="px-4 py-3 font-semibold text-slate-600">Label</th>
-                  <th className="px-4 py-3 font-semibold text-slate-600">Statut</th>
-                  <th className="px-4 py-3 font-semibold text-slate-600 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {CATEGORIES.map(category => {
-                  const items = filteredTemplates.filter(t => t.category === category.id)
-                  if (items.length === 0) return null
-                  
-                  return (
-                    <React.Fragment key={category.id}>
+        <div className="space-y-6">
+          {CATEGORIES.map(category => {
+            const items = filteredTemplates.filter(t => t.category === category.id)
+            if (items.length === 0) return null
+            
+            const catColors = CATEGORY_COLORS[category.id] || { bg: "bg-slate-100", text: "text-slate-600", border: "border-slate-200" }
+
+            const isOpen = openCategories.has(category.id)
+
+            return (
+              <div key={category.id} className={cn("bg-white rounded-xl border overflow-hidden shadow-sm animate-in fade-in transition-all", catColors.border)}>
+                <button
+                  onClick={() => toggleCategory(category.id)}
+                  className={cn("w-full px-4 py-3 font-semibold flex items-center gap-2 hover:opacity-90 transition-opacity", catColors.bg, catColors.text, isOpen && "border-b", isOpen ? catColors.border : "border-transparent")}
+                >
+                  {isOpen ? <ChevronDown className="size-4 shrink-0" /> : <ChevronRight className="size-4 shrink-0" />}
+                  {category.label}
+                  <span className="ml-auto text-xs font-medium bg-white/50 px-2 py-0.5 rounded-full">{items.length} élément{items.length > 1 ? 's' : ''}</span>
+                </button>
+                {isOpen && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className="w-10 px-2 py-3"></th>
+                        <th className="px-4 py-3 font-semibold text-slate-600 w-20">Ordre</th>
+                        <th className="px-4 py-3 font-semibold text-slate-600">Label</th>
+                        <th className="px-4 py-3 font-semibold text-slate-600 w-32">Statut</th>
+                        <th className="px-4 py-3 font-semibold text-slate-600 text-right w-32">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
                       {items.map((t, index) => (
                         <tr 
                           key={t.id} 
@@ -369,13 +405,21 @@ export function SettingsView() {
                             {index + 1}
                           </td>
                           <td className="px-4 py-3">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
-                              {category.label}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
                             <div className="flex flex-col">
-                              <span className={cn("font-medium text-slate-800", !t.is_active && "line-through text-slate-400")}>{t.label}</span>
+                              <div className="flex items-center gap-2">
+                                <span className={cn("font-medium text-slate-800", !t.is_active && "line-through text-slate-400")}>{t.label}</span>
+                                {t.is_document && (
+                                  <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 ring-1 ring-inset ring-purple-700/10">
+                                    <FileText className="size-3" />
+                                    Doc
+                                  </span>
+                                )}
+                                {t.hr_only && (
+                                  <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-500/10">
+                                    RH
+                                  </span>
+                                )}
+                              </div>
                               {t.description && <span className="text-xs text-slate-400 mt-0.5 truncate max-w-[200px]">{t.description}</span>}
                             </div>
                           </td>
@@ -400,12 +444,13 @@ export function SettingsView() {
                           </td>
                         </tr>
                       ))}
-                    </React.Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                    </tbody>
+                  </table>
+                </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

@@ -18,12 +18,13 @@ import {
   Stethoscope,
   FolderOpen,
   Send,
-  RefreshCw
+  RefreshCw,
+  UserMinus
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { InitialsAvatar } from '../shared/initials-avatar'
-import { getCollaboratorTimeline, toggleChecklistItem } from '@/app/actions/checklist'
+import { getCollaboratorTimeline, toggleChecklistItem, initiateOffboarding } from '@/app/actions/checklist'
 import { sendInvitation } from '@/app/actions/collaborators'
 import { TimelineSCurve } from './timeline-s-curve'
 import { toast } from 'sonner'
@@ -39,6 +40,29 @@ export function CollaboratorDetailView({
   const [data, setData] = useState<any>(null)
   const [selectedStep, setSelectedStep] = useState<any>(null)
   const [isInviting, setIsInviting] = useState(false)
+  const [isOffboarding, setIsOffboarding] = useState(false)
+  const [showOffboardModal, setShowOffboardModal] = useState(false)
+  const [exitDate, setExitDate] = useState(new Date().toISOString().split('T')[0])
+
+  const handleInitiateOffboarding = () => {
+    setShowOffboardModal(true)
+  }
+
+  const submitOffboarding = async () => {
+    if (!data?.collaborator?.id) return
+
+    setIsOffboarding(true)
+    const res = await initiateOffboarding(data.collaborator.id, exitDate || undefined)
+    setIsOffboarding(false)
+    setShowOffboardModal(false)
+    
+    if (res.error) {
+      toast.error(res.error)
+    } else {
+      toast.success("Suivi de sortie initié avec succès !")
+      onBack()
+    }
+  }
 
   const loadTimeline = () => {
     getCollaboratorTimeline(checklistId)
@@ -142,6 +166,17 @@ export function CollaboratorDetailView({
               </button>
             )}
 
+            {data.phase === 'entry' && (
+              <button
+                onClick={handleInitiateOffboarding}
+                disabled={isOffboarding}
+                className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100 transition-all shadow-sm active:scale-95 disabled:opacity-50"
+              >
+                {isOffboarding ? <Loader2 className="size-4 animate-spin" /> : <UserMinus className="size-4" />}
+                <span className="hidden sm:inline">Déclarer le départ</span>
+              </button>
+            )}
+
             <button
               onClick={loadTimeline}
               className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-all shadow-sm active:scale-95"
@@ -161,6 +196,52 @@ export function CollaboratorDetailView({
       </div>
 
       <TimelineSCurve data={data} onToggleItem={handleToggle} onRefresh={loadTimeline} />
+
+      {/* Modal Date de départ */}
+      {showOffboardModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl border border-slate-200">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Déclarer le départ</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Veuillez indiquer la date de départ prévue pour générer la checklist de sortie.
+            </p>
+            
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">Date de départ</label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    value={exitDate}
+                    onChange={(e) => setExitDate(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-[#00b2de] focus:outline-none focus:ring-1 focus:ring-[#00b2de]"
+                    onClick={(e) => (e.target as HTMLInputElement).showPicker?.()}
+                  />
+                  <Calendar className="absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowOffboardModal(false)}
+                  className="flex-1 rounded-lg border border-slate-200 bg-white py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                  disabled={isOffboarding}
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={submitOffboarding}
+                  disabled={isOffboarding || !exitDate}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+                >
+                  {isOffboarding && <Loader2 className="size-4 animate-spin" />}
+                  Confirmer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

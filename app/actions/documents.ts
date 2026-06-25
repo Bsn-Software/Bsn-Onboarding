@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Resend } from 'resend'
-import { getDocumentReminderEmailHtml } from '@/lib/email-templates'
+import { getDocumentReminderEmailHtml, getGroupedDocumentReminderEmailHtml } from '@/lib/email-templates'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -123,6 +123,51 @@ export async function updateDocumentStatus(checklistId: string, type: string, st
   return { success: true }
 }
 
+export async function toggleDocument(checklistId: string, type: string, currentStatus: string | undefined) {
+  const supabase = await createClient()
+
+  if (currentStatus === 'validated' || currentStatus === 'pending') {
+    // Uncheck: remove from db or set to rejected?
+    // Since it's a toggle to cancel a manual check, deleting is safest.
+    // If it was a real uploaded file, deleting it removes the file reference. That's fine if they want to uncheck it.
+    const { error } = await supabase
+      .from('onboarding_documents')
+      .delete()
+      .eq('checklist_id', checklistId)
+      .eq('type', type)
+
+    if (error) return { error: error.message }
+  } else {
+    // Check: validate manually without file
+    const { data: existing } = await supabase
+      .from('onboarding_documents')
+      .select('id')
+      .eq('checklist_id', checklistId)
+      .eq('type', type)
+      .limit(1)
+
+    if (existing && existing.length > 0) {
+      const { error } = await supabase
+        .from('onboarding_documents')
+        .update({ status: 'validated', rejection_reason: null })
+        .eq('id', existing[0].id)
+      if (error) return { error: error.message }
+    } else {
+      const { error } = await supabase
+        .from('onboarding_documents')
+        .insert({
+          checklist_id: checklistId,
+          type,
+          status: 'validated',
+          file_name: 'Fourni hors plateforme'
+        })
+      if (error) return { error: error.message }
+    }
+  }
+
+  return { success: true }
+}
+
 export async function sendDocumentReminder(collaboratorId: string, documentLabel: string) {
   const supabase = await createClient()
 
@@ -181,6 +226,97 @@ export async function sendDocumentReminder(collaboratorId: string, documentLabel
     return { success: true }
   } catch (err: any) {
     console.error('Erreur inattendue Resend:', err)
+    return { error: err.message || 'Erreur inconnue' }
+  }
+}
+
+export async function sendGroupedDocumentReminder(collaboratorId: string) {
+  const supabase = await createClient()
+
+  // 1. Vérifier droits RH
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Non authentifié' }
+
+  const admin = createAdminClient()
+
+  // 2. Récupérer le profil
+  const { data: profile, error: profileError } = await admin
+    .from('profiles')
+    .select('email, first_name')
+    .eq('id', collaboratorId)
+    .single()
+
+  if (profileError || !profile) return { error: 'Collaborateur introuvable.' }
+  if (!profile.email || profile.email.startsWith('temp_')) return { error: "Le collaborateur n'a pas d'adresse email valide." }
+
+  // 3. Récupérer la checklist la plus récente
+  const { data: checklist } = await supabase
+    .from('onboarding_checklists')
+    .select('id')
+    .eq('collaborator_id', collaboratorId)
+    .order('entry_date', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (!checklist) return { error: 'Aucune checklist trouvée.' }
+
+  // 4. Identifier les documents manquants
+  const { data: templates } = await supabase
+    .from('checklist_item_templates')
+    .select('id, label')
+    .eq('is_document', true)
+    .eq('is_active', true)
+
+  if (!templates || templates.length === 0) return { error: 'Aucun document requis configuré.' }
+
+  const { data: uploadedDocs } = await supabase
+    .from('onboarding_documents')
+    .select('type, status')
+    .eq('checklist_id', checklist.id)
+
+  const missingDocsList: string[] = []
+  
+  templates.forEach(reqDoc => {
+    // Check if there is any uploaded valid document
+    const uploaded = uploadedDocs?.filter(d => d.type === reqDoc.id).pop()
+    const status = uploaded ? uploaded.status : 'missing'
+    if (status === 'missing' || status === 'rejected') {
+      missingDocsList.push(reqDoc.label)
+    }
+  })
+
+  if (missingDocsList.length === 0) {
+    return { error: 'Tous les documents ont déjà été fournis ou sont en attente de validation.' }
+  }
+
+  // 5. Générer le lien vers l'espace collaborateur
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000'
+  const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+    type: 'recovery',
+    email: profile.email,
+    options: {
+      redirectTo: `${appUrl}/auth/callback`,
+    }
+  })
+
+  if (linkError || !linkData?.properties?.action_link) {
+    return { error: 'Impossible de générer le lien de connexion.' }
+  }
+
+  // 6. Envoyer l'email
+  const htmlContent = getGroupedDocumentReminderEmailHtml(profile.first_name || 'Collaborateur', missingDocsList, linkData.properties.action_link)
+  
+  try {
+    const { error } = await resend.emails.send({
+      from: 'BSN Engineering <satisfaction@bsnengineering.com>',
+      to: [profile.email],
+      subject: `Action requise : Documents manquants`,
+      html: htmlContent,
+    })
+
+    if (error) return { error: error.message }
+    return { success: true, count: missingDocsList.length }
+  } catch (err: any) {
     return { error: err.message || 'Erreur inconnue' }
   }
 }

@@ -11,7 +11,21 @@ export function ContentArea({ activeId, onViewDetail }: { activeId: string, onVi
             Suivez la progression de l'onboarding de chaque collaborateur.
           </p>
         </div>
-        <HRTable onViewDetail={onViewDetail} />
+        <HRTable onViewDetail={onViewDetail} phase="entry" />
+      </div>
+    )
+  }
+
+  if (activeId === 'sorties') {
+    return (
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-xl font-semibold text-slate-900">Suivi RH — Offboarding</h1>
+          <p className="text-sm text-slate-500">
+            Gérez les départs et la restitution du matériel des collaborateurs.
+          </p>
+        </div>
+        <HRTable onViewDetail={onViewDetail} phase="exit" />
       </div>
     )
   }

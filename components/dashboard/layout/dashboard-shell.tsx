@@ -77,7 +77,9 @@ export function DashboardShell({
           </div>
         )}
         {activeView === 'parametres' && (
-          <SettingsView />
+          <main className="flex min-w-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6">
+            <SettingsView />
+          </main>
         )}
       </div>
     </div>

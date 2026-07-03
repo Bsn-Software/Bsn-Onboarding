@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -18,6 +19,8 @@ export type ChecklistTemplate = {
   condition_label: string | null
   headquarters_only: boolean
   is_required: boolean
+  is_active: boolean
+  hr_only: boolean
   order_index: number
 }
 
@@ -47,6 +50,7 @@ export type CollaboratorRow = {
     is_headquarters: boolean
     manager: { first_name: string | null; last_name: string | null } | null
   }
+  active_conditions: string[]
   completions: Completion[]
   documents: { type: string; status: string; file_url: string; file_name: string }[]
   total_items: number
@@ -73,6 +77,7 @@ export async function getCollaborators(): Promise<CollaboratorRow[]> {
       entry_date,
       exit_date,
       hr_notes,
+      active_conditions,
       collaborator:profiles!collaborator_id (
         id,
         first_name,
@@ -108,17 +113,24 @@ export async function getCollaborators(): Promise<CollaboratorRow[]> {
     throw error
   }
 
-  // Récupérer le nombre total d'items actifs par phase
+  // Récupérer le nombre total d'items actifs par phase avec leurs conditions
   const { data: templates } = await supabase
     .from('checklist_item_templates')
-    .select('id, phase')
+    .select('id, phase, is_conditional, condition_label')
     .eq('is_active', true)
 
-  const entryCount = templates?.filter(t => t.phase === 'entry').length ?? 0
-  const exitCount = templates?.filter(t => t.phase === 'exit').length ?? 0
-
   return (data ?? []).map((row: any) => {
-    const totalItems = row.phase === 'entry' ? entryCount : exitCount
+    const activeConditions = row.active_conditions ?? []
+    
+    const rowTemplates = (templates ?? []).filter(t => {
+      if (t.phase !== row.phase) return false
+      if (t.is_conditional) {
+        return activeConditions.includes(t.condition_label)
+      }
+      return true
+    })
+    
+    const totalItems = rowTemplates.length
     
     const completedItems = (row.completions ?? []).filter(
       (c: Completion) => c.completed_at !== null && !c.is_not_applicable
@@ -149,6 +161,7 @@ export async function getCollaborators(): Promise<CollaboratorRow[]> {
       entry_date: row.entry_date,
       exit_date: row.exit_date,
       hr_notes: row.hr_notes,
+      active_conditions: row.active_conditions ?? [],
       collaborator: Array.isArray(row.collaborator) ? row.collaborator[0] : row.collaborator,
       completions: row.completions ?? [],
       documents: uniqueDocs,
@@ -156,6 +169,43 @@ export async function getCollaborators(): Promise<CollaboratorRow[]> {
       completed_items: completedItems + actualValidatedDocsCount,
     }
   })
+}
+
+// ─────────────────────────────────────────────────────────────
+// Active ou désactive une condition pour un collaborateur
+// ─────────────────────────────────────────────────────────────
+export async function toggleChecklistCondition(
+  checklistId: string,
+  conditionLabel: string,
+  active: boolean
+) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Non authentifié')
+
+  const { data: checklist } = await supabase
+    .from('onboarding_checklists')
+    .select('active_conditions')
+    .eq('id', checklistId)
+    .single()
+
+  let activeConditions: string[] = checklist?.active_conditions ?? []
+  
+  if (active) {
+    if (!activeConditions.includes(conditionLabel)) {
+      activeConditions.push(conditionLabel)
+    }
+  } else {
+    activeConditions = activeConditions.filter(c => c !== conditionLabel)
+  }
+
+  const { error } = await supabase
+    .from('onboarding_checklists')
+    .update({ active_conditions: activeConditions })
+    .eq('id', checklistId)
+
+  if (error) throw error
+  revalidatePath('/dashboard/hr')
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -264,7 +314,7 @@ export async function getCollaboratorTimeline(checklistId: string, isCollaborato
   const { data: checklist, error: chkError } = await supabase
     .from('onboarding_checklists')
     .select(`
-      id, phase, status, entry_date,
+      id, phase, status, entry_date, active_conditions,
       collaborator:profiles!collaborator_id (
         id, first_name, last_name, email, job_title, is_headquarters
       ),
@@ -278,6 +328,7 @@ export async function getCollaboratorTimeline(checklistId: string, isCollaborato
   if (chkError || !checklist) throw new Error('Checklist introuvable')
 
   const collab = Array.isArray(checklist.collaborator) ? checklist.collaborator[0] : checklist.collaborator
+  const activeConditions: string[] = checklist.active_conditions ?? []
 
   // 2. Fetch Templates
   const { data: templates } = await supabase
@@ -303,10 +354,14 @@ export async function getCollaboratorTimeline(checklistId: string, isCollaborato
     compliance: 'Conformité'
   }
 
-  // Grouper les templates par catégorie (en ignorant 'documents' qui sera traité à part ou fusionné)
+  // Grouper les templates par catégorie
+  // Les items conditionnels sont inclus TOUJOURS (pour que le RH puisse les activer),
+  // mais marqués avec is_conditional + condition_label pour l'affichage frontend.
   const groupedTemplates = (templates || []).reduce<Record<string, any[]>>((acc, t) => {
     // Si la requête vient du portail collaborateur et que la tâche est interne RH, on l'ignore
     if (isCollaborator && t.hr_only) return acc
+    // Si portail collaborateur et item conditionnel non activé, on l'ignore
+    if (isCollaborator && t.is_conditional && !activeConditions.includes(t.condition_label)) return acc
 
     if (!acc[t.category]) acc[t.category] = []
 
@@ -316,7 +371,9 @@ export async function getCollaboratorTimeline(checklistId: string, isCollaborato
       id: t.id,
       label: t.label,
       done: isCompleted,
-      hr_only: t.hr_only
+      hr_only: t.hr_only,
+      is_conditional: t.is_conditional,
+      condition_label: t.condition_label,
     })
     return acc
   }, {})
@@ -355,8 +412,13 @@ export async function getCollaboratorTimeline(checklistId: string, isCollaborato
 
     if (items.length === 0) continue
 
-    const catTotal = items.length
-    const catDone = items.filter(i => i.done).length
+    // Pour le calcul de progression : les items conditionnels ne comptent
+    // que si leur condition est active
+    const countedItems = items.filter((i: any) =>
+      !i.is_conditional || activeConditions.includes(i.condition_label)
+    )
+    const catTotal = countedItems.length
+    const catDone = countedItems.filter((i: any) => i.done).length
 
     totalItems += catTotal
     completedItems += catDone
@@ -380,6 +442,7 @@ export async function getCollaboratorTimeline(checklistId: string, isCollaborato
     phase: checklist.phase,
     collaborator: collab,
     progress,
+    activeConditions,
     timeline
   }
 }
@@ -389,6 +452,18 @@ export async function getCollaboratorTimeline(checklistId: string, isCollaborato
 // ─────────────────────────────────────────────────────────────
 export async function initiateOffboarding(collaboratorId: string, exitDate?: string) {
   const supabase = await createClient()
+
+  // Vérifier si un suivi de sortie existe déjà
+  const { data: existing } = await supabase
+    .from('onboarding_checklists')
+    .select('id')
+    .eq('collaborator_id', collaboratorId)
+    .eq('phase', 'exit')
+    .single()
+
+  if (existing) {
+    return { error: 'Ce collaborateur a déjà un suivi de sortie.' }
+  }
 
   // Créer une nouvelle checklist avec phase='exit'
   const { data, error } = await supabase

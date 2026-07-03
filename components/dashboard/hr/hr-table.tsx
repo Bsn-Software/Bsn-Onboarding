@@ -107,17 +107,25 @@ export function HRTable({ onViewDetail, phase = 'entry' }: { onViewDetail?: (che
   const load = useCallback(() => {
     setLoading(true)
     Promise.all([getCollaborators(), getTemplates(phase)]).then(([c, t]) => {
-      const filteredCollabs = c.filter(row => row.phase === phase)
+      let filteredCollabs = c.filter(row => row.phase === phase)
+      
+      // Si on est sur l'onglet entrées, on masque ceux qui ont déjà un suivi de sortie
+      if (phase === 'entry') {
+        const exitCollabIds = new Set(c.filter(row => row.phase === 'exit').map(row => row.collaborator?.id))
+        filteredCollabs = filteredCollabs.filter(row => !exitCollabIds.has(row.collaborator?.id))
+      }
+
       setRows(filteredCollabs)
       setTemplates(t)
       // Mettre à jour le slide-over si ouvert
-      if (selectedRow) {
-        const updated = filteredCollabs.find(r => r.checklist_id === selectedRow.checklist_id)
-        if (updated) setSelectedRow(updated)
-      }
+      setSelectedRow(prev => {
+        if (!prev) return null
+        const updated = filteredCollabs.find(r => r.checklist_id === prev.checklist_id)
+        return updated || prev
+      })
       setLoading(false)
     }).catch(() => setLoading(false))
-  }, [selectedRow?.checklist_id, phase])
+  }, [phase])
 
   useEffect(() => { load() }, [load])
 

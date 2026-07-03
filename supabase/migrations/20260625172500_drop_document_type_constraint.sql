@@ -1,0 +1,1 @@
+ALTER TABLE public.onboarding_documents DROP CONSTRAINT IF EXISTS onboarding_documents_type_check;

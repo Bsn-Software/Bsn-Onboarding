@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Resend } from 'resend'
 import { getDocumentReminderEmailHtml, getGroupedDocumentReminderEmailHtml } from '@/lib/email-templates'
+import { uploadFileToFolder } from '@/lib/sharepoint'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -106,7 +107,7 @@ export async function updateDocumentStatus(checklistId: string, type: string, st
   // On met à jour le statut du document le plus récent de ce type pour cette checklist
   // Pour éviter des problèmes si plusieurs documents existent, on utilise eq sur les deux champs. 
   // S'il y a plusieurs entrées, cela mettra à jour toutes, ce qui est acceptable ici (elles sont toutes pour le même type/checklist).
-  const { error } = await supabase
+  const { data: updatedDocs, error } = await supabase
     .from('onboarding_documents')
     .update({
       status,
@@ -114,10 +115,45 @@ export async function updateDocumentStatus(checklistId: string, type: string, st
     })
     .eq('checklist_id', checklistId)
     .eq('type', type)
+    .select('*')
 
   if (error) {
     console.error('Erreur updateDocumentStatus:', error)
     return { error: error.message }
+  }
+
+  // 2. Synchronisation avec SharePoint si validé
+  if (status === 'validated' && updatedDocs && updatedDocs.length > 0) {
+    const doc = updatedDocs[0]
+    if (doc.file_url) {
+      try {
+        const { data: checklist } = await supabase
+          .from('onboarding_checklists')
+          .select('sp_folder_id')
+          .eq('id', checklistId)
+          .single()
+
+        if (checklist?.sp_folder_id) {
+          // Télécharger depuis Supabase
+          const { data: fileData, error: downloadError } = await supabase.storage
+            .from('onboarding_documents')
+            .download(doc.file_url)
+
+          if (!downloadError && fileData) {
+            const arrayBuffer = await fileData.arrayBuffer()
+            const buffer = Buffer.from(arrayBuffer)
+            
+            // Envoyer vers SharePoint
+            await uploadFileToFolder(checklist.sp_folder_id, doc.file_name || 'document.pdf', buffer)
+          } else {
+            console.error('Erreur téléchargement Supabase pour SP:', downloadError)
+          }
+        }
+      } catch (err) {
+        console.error('Erreur synchronisation SharePoint:', err)
+        // Non-bloquant
+      }
+    }
   }
 
   return { success: true }

@@ -1,0 +1,1 @@
+ALTER TABLE public.onboarding_checklists ADD COLUMN IF NOT EXISTS sp_folder_id TEXT; ALTER TABLE public.onboarding_checklists ADD COLUMN IF NOT EXISTS sp_folder_url TEXT;

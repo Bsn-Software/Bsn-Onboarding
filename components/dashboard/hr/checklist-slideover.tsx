@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState, useTransition } from 'react'
-import { CheckCircle2, ChevronDown, ChevronRight, X, ExternalLink, Check, Bell, Loader2 } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronRight, X, ExternalLink, Check, Bell, Loader2, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ChecklistTemplate, CollaboratorRow, Completion } from '@/app/actions/checklist'
-import { toggleChecklistItem, updateHrNotes } from '@/app/actions/checklist'
+import { toggleChecklistItem, updateHrNotes, toggleChecklistCondition } from '@/app/actions/checklist'
 import { updateDocumentStatus, sendDocumentReminder, sendGroupedDocumentReminder, toggleDocument } from '@/app/actions/documents'
 import { createClient } from '@/lib/supabase/client'
 import { InitialsAvatar } from '../shared/initials-avatar'
@@ -39,6 +39,13 @@ export function ChecklistSlideover({ row, templates, onClose, onRefresh }: Props
   const [notes, setNotes] = useState(row?.hr_notes ?? '')
   const [notesSaved, setNotesSaved] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [localActiveConditions, setLocalActiveConditions] = useState<string[]>(row?.active_conditions ?? [])
+  const [togglingCondition, setTogglingCondition] = useState<string | null>(null)
+
+  // Sync local conditions when row changes (e.g. after onRefresh)
+  useEffect(() => {
+    setLocalActiveConditions(row?.active_conditions ?? [])
+  }, [row?.active_conditions])
 
   // Mettre à jour les notes quand le collaborateur change
   useEffect(() => {
@@ -51,7 +58,7 @@ export function ChecklistSlideover({ row, templates, onClose, onRefresh }: Props
   const collab = row.collaborator
   const name = [collab?.first_name, collab?.last_name].filter(Boolean).join(' ') || collab?.email || '—'
 
-  // Grouper les templates par catégorie
+  // Grouper TOUS les templates par catégorie (conditionnels inclus)
   const byCategory = templates.reduce<Record<string, ChecklistTemplate[]>>((acc, t) => {
     if (!acc[t.category]) acc[t.category] = []
     acc[t.category].push(t)
@@ -76,6 +83,26 @@ export function ChecklistSlideover({ row, templates, onClose, onRefresh }: Props
       await toggleChecklistItem(row.checklist_id, templateId, checked)
       onRefresh()
     })
+  }
+
+  const handleToggleCondition = async (conditionLabel: string, currentlyActive: boolean) => {
+    setTogglingCondition(conditionLabel)
+    // Optimistic update
+    setLocalActiveConditions(prev =>
+      currentlyActive ? prev.filter(c => c !== conditionLabel) : [...prev, conditionLabel]
+    )
+    try {
+      await toggleChecklistCondition(row.checklist_id, conditionLabel, !currentlyActive)
+      onRefresh()
+    } catch (err) {
+      // Rollback
+      setLocalActiveConditions(prev =>
+        currentlyActive ? [...prev, conditionLabel] : prev.filter(c => c !== conditionLabel)
+      )
+      toast.error('Erreur lors du changement de condition')
+    } finally {
+      setTogglingCondition(null)
+    }
   }
 
   const handleSaveNotes = async () => {
@@ -137,9 +164,9 @@ export function ChecklistSlideover({ row, templates, onClose, onRefresh }: Props
 
         {/* Checklist scrollable */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
-          
+
           <DocumentCategory 
-             templates={templates.filter(t => t.category === 'documents')}
+             templates={templates.filter(t => t.category === 'documents' && (!t.is_conditional || localActiveConditions.includes(t.condition_label!)))}
              documents={row.documents}
              checklistId={row.checklist_id}
              collaboratorId={collab?.id}
@@ -148,15 +175,30 @@ export function ChecklistSlideover({ row, templates, onClose, onRefresh }: Props
              onRefresh={onRefresh}
           />
 
-          {Object.entries(byCategory).map(([cat, items]) => {
-            if (cat === 'documents') return null; // Sécurité au cas où il y aurait des templates 'documents'
+          {Object.entries(byCategory).map(([cat, allItems]) => {
+            if (cat === 'documents') return null
 
             const meta = CATEGORY_LABELS[cat] ?? { label: cat, color: 'bg-slate-100 text-slate-600' }
-            const doneCount = items.filter(t => {
-              const c = completionMap.get(t.id)
-              return c?.completed_at != null
-            }).length
             const isOpen = openCategories.has(cat)
+
+            // Séparer items normaux et groupes conditionnels
+            const regularItems = allItems.filter(t => !t.is_conditional)
+            const conditionalGroups: Record<string, ChecklistTemplate[]> = {}
+            allItems.filter(t => t.is_conditional).forEach(t => {
+              const key = t.condition_label || ''
+              if (!conditionalGroups[key]) conditionalGroups[key] = []
+              conditionalGroups[key].push(t)
+            })
+
+            // Compter les items actifs pour le badge
+            const activeItems = [
+              ...regularItems,
+              ...Object.entries(conditionalGroups)
+                .filter(([label]) => localActiveConditions.includes(label))
+                .flatMap(([, items]) => items)
+            ]
+            const doneCount = activeItems.filter(t => completionMap.get(t.id)?.completed_at != null).length
+            const totalCount = activeItems.length
 
             return (
               <div key={cat} className="rounded-xl border border-slate-200 overflow-hidden">
@@ -170,7 +212,13 @@ export function ChecklistSlideover({ row, templates, onClose, onRefresh }: Props
                     <span className={cn('rounded-md px-2 py-0.5 text-xs font-semibold', meta.color)}>
                       {meta.label}
                     </span>
-                    <span className="text-xs text-slate-500">{doneCount}/{items.length}</span>
+                    <span className="text-xs text-slate-500">{doneCount}/{totalCount}</span>
+                    {Object.keys(conditionalGroups).length > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                        <Layers className="size-2.5" />
+                        {Object.keys(conditionalGroups).length} groupe{Object.keys(conditionalGroups).length > 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
                   {isOpen ? (
                     <ChevronDown className="size-4 text-slate-400" />
@@ -179,67 +227,165 @@ export function ChecklistSlideover({ row, templates, onClose, onRefresh }: Props
                   )}
                 </button>
 
-                {/* Items */}
                 {isOpen && (
-                  <ul className="divide-y divide-slate-100">
-                    {items.map(template => {
-                      const completion = completionMap.get(template.id)
-                      const isDone = completion?.completed_at != null
-                      const isNA = completion?.is_not_applicable ?? false
-
-                      return (
-                        <li key={template.id} className={cn(
-                          'flex items-start gap-3 px-4 py-3 transition-colors',
-                          isDone ? 'bg-[#00b2de]/5' : 'bg-white hover:bg-slate-50'
-                        )}>
-                          {/* Checkbox */}
-                          <button
-                            type="button"
-                            onClick={() => handleToggle(template.id, !isDone)}
-                            disabled={isPending}
-                            className={cn(
-                              'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-all',
-                              isDone
-                                ? 'border-[#00b2de] bg-[#00b2de] text-white'
-                                : 'border-slate-300 bg-white hover:border-[#00b2de]'
-                            )}
-                          >
-                            {isDone && <CheckCircle2 className="size-3.5" />}
-                          </button>
-
-                          {/* Label */}
-                          <div className="min-w-0 flex-1">
-                            <p className={cn(
-                              'text-sm leading-snug',
-                              isDone ? 'text-slate-400 line-through' : 'text-slate-800 font-medium'
+                  <div>
+                    {/* Items normaux */}
+                    {regularItems.length > 0 && (
+                      <ul className="divide-y divide-slate-100">
+                        {regularItems.map(template => {
+                          const completion = completionMap.get(template.id)
+                          const isDone = completion?.completed_at != null
+                          return (
+                            <li key={template.id} className={cn(
+                              'flex items-start gap-3 px-4 py-3 transition-colors',
+                              isDone ? 'bg-[#00b2de]/5' : 'bg-white hover:bg-slate-50'
                             )}>
-                              {template.label}
-                              {template.is_conditional && (
-                                <span className="ml-1.5 text-xs text-amber-500 no-underline">
-                                  (conditionnel)
+                              <button
+                                type="button"
+                                onClick={() => handleToggle(template.id, !isDone)}
+                                disabled={isPending}
+                                className={cn(
+                                  'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-all',
+                                  isDone
+                                    ? 'border-[#00b2de] bg-[#00b2de] text-white'
+                                    : 'border-slate-300 bg-white hover:border-[#00b2de]'
+                                )}
+                              >
+                                {isDone && <CheckCircle2 className="size-3.5" />}
+                              </button>
+                              <div className="min-w-0 flex-1">
+                                <p className={cn(
+                                  'text-sm leading-snug',
+                                  isDone ? 'text-slate-400 line-through' : 'text-slate-800 font-medium'
+                                )}>
+                                  {template.label}
+                                </p>
+                                {template.description && (
+                                  <p className="mt-0.5 text-xs text-slate-400">{template.description}</p>
+                                )}
+                                {isDone && completion?.completed_at && (
+                                  <p className="mt-0.5 text-xs text-[#00b2de]">
+                                    ✓ {new Date(completion.completed_at).toLocaleDateString('fr-FR')}
+                                  </p>
+                                )}
+                              </div>
+                              {template.due_offset && (
+                                <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
+                                  {template.due_offset}
                                 </span>
                               )}
-                            </p>
-                            {template.description && (
-                              <p className="mt-0.5 text-xs text-slate-400">{template.description}</p>
-                            )}
-                            {isDone && completion?.completed_at && (
-                              <p className="mt-0.5 text-xs text-[#00b2de]">
-                                ✓ {new Date(completion.completed_at).toLocaleDateString('fr-FR')}
-                              </p>
-                            )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+
+                    {/* Groupes conditionnels */}
+                    {Object.entries(conditionalGroups).map(([groupLabel, groupItems]) => {
+                      const isActive = localActiveConditions.includes(groupLabel)
+                      const isToggling = togglingCondition === groupLabel
+                      const doneGroupCount = groupItems.filter(t => completionMap.get(t.id)?.completed_at != null).length
+
+                      return (
+                        <div key={groupLabel} className={cn(
+                          "border-t border-slate-100",
+                        )}>
+                          {/* En-tête du groupe */}
+                          <div className={cn(
+                            "flex items-center justify-between px-4 py-2.5 gap-3",
+                            isActive ? "bg-amber-50" : "bg-slate-50"
+                          )}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Layers className={cn("size-3.5 shrink-0", isActive ? "text-amber-600" : "text-slate-400")} />
+                              <span className={cn("text-xs font-semibold truncate", isActive ? "text-amber-800" : "text-slate-500")}>
+                                {groupLabel}
+                              </span>
+                              {isActive && (
+                                <span className="text-[10px] text-amber-600 font-medium shrink-0">
+                                  {doneGroupCount}/{groupItems.length}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleCondition(groupLabel, isActive)}
+                              disabled={isToggling}
+                              className={cn(
+                                "relative inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 shadow-sm disabled:opacity-50",
+                                isActive ? "bg-amber-500" : "bg-slate-300"
+                              )}
+                            >
+                              {isToggling ? (
+                                <Loader2 className="absolute inset-0 m-auto size-2.5 animate-spin text-white" />
+                              ) : (
+                                <span className={cn(
+                                  "pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200",
+                                  isActive ? "translate-x-3" : "translate-x-0"
+                                )} />
+                              )}
+                            </button>
                           </div>
 
-                          {/* Badge optionnel */}
-                          {template.due_offset && (
-                            <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
-                              {template.due_offset}
-                            </span>
+                          {/* Items du groupe si actif */}
+                          {isActive && (
+                            <ul className="divide-y divide-amber-50/80">
+                              {groupItems.map(template => {
+                                const completion = completionMap.get(template.id)
+                                const isDone = completion?.completed_at != null
+                                return (
+                                  <li key={template.id} className={cn(
+                                    'flex items-start gap-3 pl-8 pr-4 py-3 transition-colors',
+                                    isDone ? 'bg-amber-50/30' : 'bg-white hover:bg-amber-50/20'
+                                  )}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggle(template.id, !isDone)}
+                                      disabled={isPending}
+                                      className={cn(
+                                        'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-all',
+                                        isDone
+                                          ? 'border-amber-500 bg-amber-500 text-white'
+                                          : 'border-slate-300 bg-white hover:border-amber-400'
+                                      )}
+                                    >
+                                      {isDone && <CheckCircle2 className="size-3.5" />}
+                                    </button>
+                                    <div className="min-w-0 flex-1">
+                                      <p className={cn(
+                                        'text-sm leading-snug',
+                                        isDone ? 'text-slate-400 line-through' : 'text-slate-800 font-medium'
+                                      )}>
+                                        {template.label}
+                                      </p>
+                                      {template.description && (
+                                        <p className="mt-0.5 text-xs text-slate-400">{template.description}</p>
+                                      )}
+                                      {isDone && completion?.completed_at && (
+                                        <p className="mt-0.5 text-xs text-amber-500">
+                                          ✓ {new Date(completion.completed_at).toLocaleDateString('fr-FR')}
+                                        </p>
+                                      )}
+                                    </div>
+                                    {template.due_offset && (
+                                      <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
+                                        {template.due_offset}
+                                      </span>
+                                    )}
+                                  </li>
+                                )
+                              })}
+                            </ul>
                           )}
-                        </li>
+
+                          {!isActive && (
+                            <p className="pl-8 pr-4 py-2 text-xs text-slate-400 italic">
+                              Activez pour afficher les {groupItems.length} tâche{groupItems.length > 1 ? 's' : ''}.
+                            </p>
+                          )}
+                        </div>
                       )
                     })}
-                  </ul>
+                  </div>
                 )}
               </div>
             )

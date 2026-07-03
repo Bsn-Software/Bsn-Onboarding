@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { Resend } from 'resend'
+import { createCollaboratorFolder } from '@/lib/sharepoint'
 import { getInvitationEmailHtml } from '@/lib/email-templates'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -88,7 +89,20 @@ export async function createCollaborator(input: CreateCollaboratorInput) {
     // On continue quand même, le profil minimal est créé
   }
 
-  // 3. Créer le dossier d'onboarding
+  // 3. Créer le dossier sur SharePoint (non-bloquant)
+  const folderName = `${(input.last_name || '').toUpperCase()} ${input.first_name || ''}`.trim()
+  let spFolderId = null
+  let spFolderUrl = null
+  
+  try {
+    const spResult = await createCollaboratorFolder(folderName)
+    spFolderId = spResult.id
+    spFolderUrl = spResult.webUrl
+  } catch(e) {
+    console.error('Erreur lors de la création du dossier SharePoint:', e)
+  }
+
+  // 4. Créer le dossier d'onboarding
   const { data: checklist, error: checklistError } = await admin
     .from('onboarding_checklists')
     .insert({
@@ -96,6 +110,8 @@ export async function createCollaborator(input: CreateCollaboratorInput) {
       phase: 'entry',
       status: 'in_progress',
       entry_date: input.entry_date || null,
+      sp_folder_id: spFolderId,
+      sp_folder_url: spFolderUrl
     })
     .select('id')
     .single()

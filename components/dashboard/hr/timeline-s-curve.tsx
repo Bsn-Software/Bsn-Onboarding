@@ -13,11 +13,13 @@ import {
   FolderOpen,
   Check,
   Bell,
-  Loader2
+  Loader2,
+  Layers,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { updateDocumentStatus, sendDocumentReminder, sendGroupedDocumentReminder, toggleDocument } from '@/app/actions/documents'
+import { toggleChecklistCondition } from '@/app/actions/checklist'
 import { toast } from 'sonner'
 
 export const CATEGORY_COLORS: Record<string, { bg: string, text: string, border: string, fill: string }> = {
@@ -102,9 +104,16 @@ export function TimelineSCurve({ data, onToggleItem, onRefresh }: TimelineSCurve
   const [sendingReminder, setSendingReminder] = useState<string | null>(null)
   const [processingDoc, setProcessingDoc] = useState<string | null>(null)
   const [sendingGroupReminder, setSendingGroupReminder] = useState(false)
+  const [localActiveConditions, setLocalActiveConditions] = useState<string[]>([])
+  const [togglingCondition, setTogglingCondition] = useState<string | null>(null)
   
   const checklistId = data?.checklistId
   const collaboratorId = data?.collaborator?.id
+
+  // Sync localActiveConditions when data changes
+  useEffect(() => {
+    setLocalActiveConditions(data?.activeConditions ?? [])
+  }, [data?.activeConditions])
 
   // On écoute les changements props pour actualiser la modale si elle est ouverte
   useEffect(() => {
@@ -115,6 +124,27 @@ export function TimelineSCurve({ data, onToggleItem, onRefresh }: TimelineSCurve
       }
     }
   }, [data])
+
+  const handleToggleCondition = async (conditionLabel: string, currentlyActive: boolean) => {
+    if (!checklistId) return
+    setTogglingCondition(conditionLabel)
+    // Optimistic update
+    setLocalActiveConditions(prev =>
+      currentlyActive ? prev.filter(c => c !== conditionLabel) : [...prev, conditionLabel]
+    )
+    try {
+      await toggleChecklistCondition(checklistId, conditionLabel, !currentlyActive)
+      onRefresh?.()
+    } catch (err) {
+      // Rollback
+      setLocalActiveConditions(prev =>
+        currentlyActive ? [...prev, conditionLabel] : prev.filter(c => c !== conditionLabel)
+      )
+      toast.error('Erreur lors du changement de condition')
+    } finally {
+      setTogglingCondition(null)
+    }
+  }
 
   const handleGroupRemind = async () => {
     if (!collaboratorId) return
@@ -138,7 +168,8 @@ export function TimelineSCurve({ data, onToggleItem, onRefresh }: TimelineSCurve
     if (isDoc) {
       setProcessingDoc(itemId)
       try {
-        const res = await toggleDocument(checklistId, itemId, currentStatus)
+        const rawItemId = itemId.replace('doc-', '')
+        const res = await toggleDocument(checklistId, rawItemId, currentStatus)
         if (res.error) toast.error(`Erreur: ${res.error}`)
         else onRefresh?.()
       } catch(e) {
@@ -304,14 +335,25 @@ export function TimelineSCurve({ data, onToggleItem, onRefresh }: TimelineSCurve
             </div>
 
             <div className="p-5 overflow-y-auto">
-              <ul className="flex flex-col gap-3">
-                {selectedStep.items.map((item: any, i: number) => {
+              {(() => {
+                // Séparer items normaux et groupes conditionnels
+                const regularItems = selectedStep.items.filter((i: any) => !i.is_conditional)
+                const conditionalGroups: Record<string, any[]> = {}
+                selectedStep.items
+                  .filter((i: any) => i.is_conditional)
+                  .forEach((item: any) => {
+                    const key = item.condition_label || ''
+                    if (!conditionalGroups[key]) conditionalGroups[key] = []
+                    conditionalGroups[key].push(item)
+                  })
+
+                const renderItem = (item: any, i: number) => {
                   const isDoc = item.id?.startsWith('doc-')
                   return (
                     <li
                       key={i}
                       onClick={() => {
-                        if (isDoc && processingDoc === item.id) return;
+                        if (isDoc && processingDoc === item.id) return
                         handleToggle(item.id, item.done, isDoc, item.status)
                       }}
                       className={cn(
@@ -387,11 +429,88 @@ export function TimelineSCurve({ data, onToggleItem, onRefresh }: TimelineSCurve
                       </div>
                     </li>
                   )
-                })}
-                {selectedStep.items.length === 0 && (
-                  <p className="text-center text-sm text-slate-500 py-4">Aucune tâche pour cette catégorie.</p>
-                )}
-              </ul>
+                }
+
+                return (
+                  <>
+                    {/* Items standards */}
+                    {regularItems.length > 0 && (
+                      <ul className="flex flex-col gap-3">
+                        {regularItems.map((item: any, i: number) => renderItem(item, i))}
+                      </ul>
+                    )}
+
+                    {/* Groupes conditionnels */}
+                    {Object.entries(conditionalGroups).map(([groupLabel, groupItems]) => {
+                      const isActive = localActiveConditions.includes(groupLabel)
+                      const isToggling = togglingCondition === groupLabel
+                      const doneCount = groupItems.filter((i: any) => i.done).length
+
+                      return (
+                        <div key={groupLabel} className={cn(
+                          "mt-3 rounded-xl border-2 overflow-hidden transition-all",
+                          isActive ? "border-amber-200" : "border-slate-200"
+                        )}>
+                          {/* En-tête du groupe */}
+                          <div className={cn(
+                            "flex items-center justify-between px-4 py-3 gap-3",
+                            isActive ? "bg-amber-50" : "bg-slate-50"
+                          )}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Layers className={cn("size-4 shrink-0", isActive ? "text-amber-600" : "text-slate-400")} />
+                              <span className={cn("text-sm font-semibold truncate", isActive ? "text-amber-800" : "text-slate-600")}>
+                                {groupLabel}
+                              </span>
+                              {isActive && (
+                                <span className="text-xs text-amber-600 font-medium shrink-0">
+                                  {doneCount}/{groupItems.length}
+                                </span>
+                              )}
+                            </div>
+                            {/* Toggle ON/OFF */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleCondition(groupLabel, isActive)}
+                              disabled={isToggling}
+                              className={cn(
+                                "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 shadow-sm disabled:opacity-50",
+                                isActive ? "bg-amber-500" : "bg-slate-300"
+                              )}
+                            >
+                              {isToggling ? (
+                                <Loader2 className="absolute inset-0 m-auto size-3 animate-spin text-white" />
+                              ) : (
+                                <span className={cn(
+                                  "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                                  isActive ? "translate-x-4" : "translate-x-0"
+                                )} />
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Items du groupe (visibles seulement si actif) */}
+                          {isActive && (
+                            <ul className="flex flex-col gap-2 p-3">
+                              {groupItems.map((item: any, i: number) => renderItem(item, i))}
+                            </ul>
+                          )}
+
+                          {/* Message si inactif */}
+                          {!isActive && (
+                            <p className="px-4 py-3 text-xs text-slate-400 italic">
+                              Activez ce groupe pour afficher ses {groupItems.length} tâche{groupItems.length > 1 ? 's' : ''}.
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    {selectedStep.items.length === 0 && (
+                      <p className="text-center text-sm text-slate-500 py-4">Aucune tâche pour cette catégorie.</p>
+                    )}
+                  </>
+                )
+              })()}
             </div>
           </div>
         </div>

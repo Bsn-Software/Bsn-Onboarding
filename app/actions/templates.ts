@@ -92,15 +92,18 @@ export async function deleteTemplate(id: string) {
   return { success: true }
 }
 
-export async function updateTemplatesOrder(updates: { id: string, order_index: number }[]) {
+export async function updateTemplatesOrder(updates: { id: string, order_index: number, category?: string }[]) {
   const supabase = await createClient()
 
   // Supabase doesn't support bulk upsert effectively with just update
   // So we will loop through and update each one. It's safe enough since categories are small.
   for (const item of updates) {
+    const payload: any = { order_index: item.order_index }
+    if (item.category) payload.category = item.category
+
     const { error } = await supabase
       .from('checklist_item_templates')
-      .update({ order_index: item.order_index })
+      .update(payload)
       .eq('id', item.id)
 
     if (error) {

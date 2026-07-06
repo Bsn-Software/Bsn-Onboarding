@@ -172,6 +172,109 @@ export async function getCollaborators(): Promise<CollaboratorRow[]> {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Récupère les données d'un seul collaborateur (optimisation)
+// ─────────────────────────────────────────────────────────────
+export async function getCollaborator(checklistId: string): Promise<CollaboratorRow | null> {
+  const supabase = await createClient()
+
+  // Vérifier que l'utilisateur connecté est RH
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Non authentifié')
+
+  const { data: row, error } = await supabase
+    .from('onboarding_checklists')
+    .select(`
+      id,
+      phase,
+      status,
+      entry_date,
+      exit_date,
+      hr_notes,
+      active_conditions,
+      collaborator:profiles!collaborator_id (
+        id,
+        first_name,
+        last_name,
+        email,
+        job_title,
+        is_headquarters,
+        manager:profiles!manager_id (
+          first_name,
+          last_name
+        )
+      ),
+      completions:checklist_completions (
+        id,
+        checklist_id,
+        template_id,
+        completed_by,
+        completed_at,
+        notes,
+        is_not_applicable
+      ),
+      documents:onboarding_documents (
+        type,
+        status,
+        file_url,
+        file_name
+      )
+    `)
+    .eq('id', checklistId)
+    .single()
+
+  if (error || !row) {
+    return null
+  }
+
+  const { data: templates } = await supabase
+    .from('checklist_item_templates')
+    .select('id, phase, is_conditional, condition_label')
+    .eq('is_active', true)
+
+  const activeConditions = row.active_conditions ?? []
+  
+  const rowTemplates = (templates ?? []).filter(t => {
+    if (t.phase !== row.phase) return false
+    if (t.is_conditional) {
+      return activeConditions.includes(t.condition_label)
+    }
+    return true
+  })
+  
+  const totalItems = rowTemplates.length
+  
+  const completedItems = (row.completions ?? []).filter(
+    (c: Completion) => c.completed_at !== null && !c.is_not_applicable
+  ).length
+  
+  const uniqueDocsMap = new Map();
+  (row.documents ?? []).forEach((doc: any) => {
+    uniqueDocsMap.set(doc.type, doc);
+  });
+  const uniqueDocs = Array.from(uniqueDocsMap.values());
+
+  const actualValidatedDocsCount = uniqueDocs.filter(
+    (d: any) => d.status === 'validated' || d.status === 'pending'
+  ).length;
+
+  return {
+    checklist_id: row.id,
+    phase: row.phase,
+    status: row.status,
+    entry_date: row.entry_date,
+    exit_date: row.exit_date,
+    hr_notes: row.hr_notes,
+    active_conditions: row.active_conditions ?? [],
+    collaborator: Array.isArray(row.collaborator) ? row.collaborator[0] : row.collaborator,
+    completions: row.completions ?? [],
+    documents: uniqueDocs,
+    total_items: totalItems,
+    completed_items: completedItems + actualValidatedDocsCount,
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────
 // Active ou désactive une condition pour un collaborateur
 // ─────────────────────────────────────────────────────────────
 export async function toggleChecklistCondition(

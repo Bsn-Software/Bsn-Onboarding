@@ -256,29 +256,43 @@ export function SettingsView() {
     }
 
     const itemsInCategory = templates.filter(t => t.category === categoryId && t.phase === activePhase)
-    const draggedItem = itemsInCategory.find(t => t.id === draggedId)
-    const targetItem = itemsInCategory.find(t => t.id === dropTargetId)
+    
+    // Determine dragged items globally across all categories
+    const draggedItems = draggedId.startsWith('group-') 
+      ? templates.filter(t => t.is_conditional && t.condition_label === draggedId.replace('group-', '') && t.phase === activePhase)
+      : [templates.find(t => t.id === draggedId)].filter(Boolean)
 
-    if (!draggedItem || !targetItem) {
+    if (draggedItems.length === 0) {
       handleDragEnd()
       return
     }
 
-    const newItems = [...itemsInCategory]
-    const draggedIndex = newItems.findIndex(t => t.id === draggedId)
-    newItems.splice(draggedIndex, 1)
+    const draggedIds = new Set(draggedItems.map(t => t.id as string))
+    // We only keep items already in the target category that were not dragged
+    const newItems = itemsInCategory.filter(t => !draggedIds.has(t.id))
 
-    const targetIndex = newItems.findIndex(t => t.id === dropTargetId)
-    newItems.splice(targetIndex, 0, draggedItem)
+    // Find the insertion point
+    let targetIndex = newItems.findIndex(t => 
+      dropTargetId.startsWith('group-') 
+        ? (t.is_conditional && t.condition_label === dropTargetId.replace('group-', ''))
+        : t.id === dropTargetId
+    )
+    if (targetIndex === -1) targetIndex = newItems.length
+
+    // Update the dragged items with the new category
+    const movedItems = draggedItems.map(t => ({ ...t, category: categoryId }))
+
+    newItems.splice(targetIndex, 0, ...movedItems as ChecklistTemplate[])
 
     const updates = newItems.map((item, index) => ({
       id: item.id,
-      order_index: (index + 1) * 10
+      order_index: (index + 1) * 10,
+      category: categoryId
     }))
 
     setTemplates(prev => prev.map(t => {
       const update = updates.find(u => u.id === t.id)
-      return update ? { ...t, order_index: update.order_index } : t
+      return update ? { ...t, order_index: update.order_index, category: update.category! } : t
     }).sort((a, b) => a.order_index - b.order_index))
 
     handleDragEnd()
@@ -644,46 +658,79 @@ export function SettingsView() {
     )
   }
 
-  // Render the template list, grouping conditional items by condition_label
+  // Render the template list, keeping the DB order, grouping contiguous condition_labels
   const renderTemplateList = (items: ChecklistTemplate[], categoryId: string) => {
-    // Separate standalone items from conditional ones
-    const standaloneItems = items.filter(t => !t.is_conditional)
-    const conditionalItems = items.filter(t => t.is_conditional)
-
-    // Group conditional items by condition_label
-    const conditionalGroups = conditionalItems.reduce<Record<string, ChecklistTemplate[]>>((acc, t) => {
-      const key = t.condition_label || '__ungrouped__'
-      if (!acc[key]) acc[key] = []
-      acc[key].push(t)
-      return acc
-    }, {})
-
     const rows: React.ReactNode[] = []
+    
+    type Block = { type: 'item' | 'group', id: string, label?: string, items: ChecklistTemplate[] }
+    const blocks: Block[] = []
+    let currentGroupLabel: string | null = null
+    let currentGroupItems: ChecklistTemplate[] = []
 
-    // Render standalone items
-    standaloneItems.forEach((t, index) => {
-      rows.push(renderTemplateRow(t, index, categoryId))
+    items.forEach((t) => {
+      if (t.is_conditional && t.condition_label) {
+        if (t.condition_label !== currentGroupLabel) {
+          if (currentGroupLabel) {
+            blocks.push({ type: 'group', id: `group-${currentGroupLabel}`, label: currentGroupLabel, items: currentGroupItems })
+          }
+          currentGroupLabel = t.condition_label
+          currentGroupItems = [t]
+        } else {
+          currentGroupItems.push(t)
+        }
+      } else {
+        if (currentGroupLabel) {
+          blocks.push({ type: 'group', id: `group-${currentGroupLabel}`, label: currentGroupLabel, items: currentGroupItems })
+          currentGroupLabel = null
+          currentGroupItems = []
+        }
+        blocks.push({ type: 'item', id: t.id, items: [t] })
+      }
     })
+    if (currentGroupLabel) {
+      blocks.push({ type: 'group', id: `group-${currentGroupLabel}`, label: currentGroupLabel, items: currentGroupItems })
+    }
 
-    // Render conditional groups
-    Object.entries(conditionalGroups).forEach(([groupLabel, groupItems]) => {
-      rows.push(
-        <tr key={`group-header-${groupLabel}`}>
-          <td colSpan={5} className="px-4 pt-4 pb-1">
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1">
-                <Layers className="size-3 text-amber-600" />
-                <span className="text-xs font-semibold text-amber-700">Groupe conditionnel</span>
-                <span className="text-xs font-bold text-amber-900 ml-0.5">— {groupLabel}</span>
+    blocks.forEach((block, blockIndex) => {
+      if (block.type === 'item') {
+        rows.push(renderTemplateRow(block.items[0], blockIndex, categoryId, false))
+      } else {
+        rows.push(
+          <tr 
+            key={block.id}
+            draggable={true}
+            onDragStart={(e) => handleDragStart(e, block.id)}
+            onDragOver={handleDragOver}
+            onDragEnter={(e) => handleDragEnter(e, block.id)}
+            onDrop={(e) => handleDrop(e, categoryId)}
+            onDragEnd={handleDragEnd}
+            className={cn(
+              "group hover:bg-slate-50 transition-colors cursor-grab active:cursor-grabbing",
+              draggedId === block.id && "opacity-30 bg-slate-100",
+              dropTargetId === block.id && "border-t-2 border-[#00b2de]"
+            )}
+          >
+            <td className="w-10 px-2 py-3">
+              <div className="flex items-center justify-center">
+                <GripVertical className="size-4 text-slate-300 group-hover:text-slate-500 cursor-grab active:cursor-grabbing" />
               </div>
-              <span className="text-xs text-slate-400">{groupItems.length} item{groupItems.length > 1 ? 's' : ''}</span>
-            </div>
-          </td>
-        </tr>
-      )
-      groupItems.forEach((t, index) => {
-        rows.push(renderTemplateRow(t, index, categoryId, true))
-      })
+            </td>
+            <td colSpan={4} className="px-4 pt-4 pb-1">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1">
+                  <Layers className="size-3 text-amber-600" />
+                  <span className="text-xs font-semibold text-amber-700">Groupe conditionnel</span>
+                  <span className="text-xs font-bold text-amber-900 ml-0.5">— {block.label}</span>
+                </div>
+                <span className="text-xs text-slate-400">{block.items.length} item{block.items.length > 1 ? 's' : ''}</span>
+              </div>
+            </td>
+          </tr>
+        )
+        block.items.forEach((t, childIndex) => {
+          rows.push(renderTemplateRow(t, childIndex, categoryId, true))
+        })
+      }
     })
 
     return rows
@@ -809,7 +856,6 @@ export function SettingsView() {
         <div className="space-y-6">
           {CATEGORIES.map(category => {
             const items = filteredTemplates.filter(t => t.category === category.id)
-            if (items.length === 0) return null
             
             const catColors = CATEGORY_COLORS[category.id] || { bg: "bg-slate-100", text: "text-slate-600", border: "border-slate-200" }
 
@@ -838,7 +884,23 @@ export function SettingsView() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {renderTemplateList(items, category.id)}
+                      {items.length > 0 ? (
+                        renderTemplateList(items, category.id)
+                      ) : (
+                        <tr 
+                          onDragOver={handleDragOver} 
+                          onDragEnter={(e) => handleDragEnter(e, category.id)}
+                          onDrop={(e) => handleDrop(e, category.id)}
+                          className={cn(
+                            "transition-colors",
+                            dropTargetId === category.id && "bg-slate-50 border-t-2 border-[#00b2de]"
+                          )}
+                        >
+                          <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500 border-dashed border-2 border-slate-200 m-4 rounded-xl">
+                            Aucun élément. Glissez-déposez ici.
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>

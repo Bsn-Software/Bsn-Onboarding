@@ -14,6 +14,8 @@ export type DocumentStatus = {
   type: DocumentType
   label?: string
   hint?: string
+
+
   status: 'pending' | 'validated' | 'rejected' | 'missing'
   file_url?: string
   rejection_reason?: string
@@ -66,7 +68,7 @@ export async function getCollaboratorDocuments() {
   const documents = requiredDocs.map(reqDoc => {
     // Prendre le plus récent s'il y en a plusieurs du même type
     const uploaded = uploadedDocs?.filter(d => d.type === reqDoc.type).pop()
-    
+
     return {
       type: reqDoc.type,
       label: reqDoc.label,
@@ -142,7 +144,7 @@ export async function updateDocumentStatus(checklistId: string, type: string, st
           if (!downloadError && fileData) {
             const arrayBuffer = await fileData.arrayBuffer()
             const buffer = Buffer.from(arrayBuffer)
-            
+
             // Envoyer vers SharePoint
             await uploadFileToFolder(checklist.sp_folder_id, doc.file_name || 'document.pdf', buffer)
           } else {
@@ -245,7 +247,7 @@ export async function sendDocumentReminder(collaboratorId: string, documentLabel
 
   // 4. Envoyer l'email
   const htmlContent = getDocumentReminderEmailHtml(profile.first_name || 'Collaborateur', documentLabel, linkData.properties.action_link)
-  
+
   try {
     const { error } = await resend.emails.send({
       from: 'BSN Engineering <satisfaction@bsnengineering.com>',
@@ -311,7 +313,7 @@ export async function sendGroupedDocumentReminder(collaboratorId: string) {
     .eq('checklist_id', checklist.id)
 
   const missingDocsList: string[] = []
-  
+
   templates.forEach(reqDoc => {
     // Check if there is any uploaded valid document
     const uploaded = uploadedDocs?.filter(d => d.type === reqDoc.id).pop()
@@ -341,7 +343,7 @@ export async function sendGroupedDocumentReminder(collaboratorId: string) {
 
   // 6. Envoyer l'email
   const htmlContent = getGroupedDocumentReminderEmailHtml(profile.first_name || 'Collaborateur', missingDocsList, linkData.properties.action_link)
-  
+
   try {
     const { error } = await resend.emails.send({
       from: 'BSN Engineering <satisfaction@bsnengineering.com>',

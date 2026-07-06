@@ -18,6 +18,7 @@ import {
   type CollaboratorRow,
   getCollaborators,
   getTemplates,
+  getCollaborator,
 } from '@/app/actions/checklist'
 import { InitialsAvatar } from '../shared/initials-avatar'
 import { ChecklistSlideover } from './checklist-slideover'
@@ -126,6 +127,15 @@ export function HRTable({ onViewDetail, phase = 'entry' }: { onViewDetail?: (che
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [phase])
+
+  const refreshRow = useCallback((checklistId: string) => {
+    getCollaborator(checklistId).then((updatedRow) => {
+      if (updatedRow) {
+        setRows(prev => prev.map(r => r.checklist_id === checklistId ? updatedRow : r))
+        setSelectedRow(prev => prev?.checklist_id === checklistId ? updatedRow : prev)
+      }
+    }).catch(console.error)
+  }, [])
 
   useEffect(() => { load() }, [load])
 
@@ -344,7 +354,7 @@ export function HRTable({ onViewDetail, phase = 'entry' }: { onViewDetail?: (che
           row={selectedRow}
           templates={templates}
           onClose={() => setSelectedRow(null)}
-          onRefresh={load}
+          onRefresh={() => refreshRow(selectedRow.checklist_id)}
         />
       )}
 

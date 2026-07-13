@@ -14,11 +14,14 @@ export type DocumentStatus = {
   type: DocumentType
   label?: string
   hint?: string
-
+  category?: string
+  is_conditional?: boolean
+  condition_label?: string | null
 
   status: 'pending' | 'validated' | 'rejected' | 'missing'
   file_url?: string
   rejection_reason?: string
+  expiration_date?: string | null
 }
 
 export async function getCollaboratorDocuments() {
@@ -30,7 +33,7 @@ export async function getCollaboratorDocuments() {
   // 1. Trouver la checklist en cours du collaborateur
   const { data: checklist } = await supabase
     .from('onboarding_checklists')
-    .select('id')
+    .select('id, active_conditions, entry_date')
     .eq('collaborator_id', user.id)
     .order('entry_date', { ascending: false })
     .limit(1)
@@ -39,29 +42,37 @@ export async function getCollaboratorDocuments() {
   // 1b. Récupérer les templates de documents
   const { data: templates } = await supabase
     .from('checklist_item_templates')
-    .select('id, label, description')
-    .eq('category', 'documents')
+    .select('id, label, description, category, is_conditional, condition_label')
+    .eq('is_document', true)
     .eq('is_active', true)
     .order('order_index')
 
-  const requiredDocs = (templates || []).map(t => ({
-    type: t.id,
-    label: t.label,
-    hint: t.description || ''
-  }))
+  const activeConditions = checklist?.active_conditions || []
+
+  // Filtrer les documents requis en fonction des conditions actives
+  const requiredDocs = (templates || [])
+    .filter(t => !t.is_conditional || (t.condition_label && activeConditions.includes(t.condition_label)))
+    .map(t => ({
+      type: t.id,
+      label: t.label,
+      hint: t.description || '',
+      category: t.category,
+      is_conditional: t.is_conditional,
+      condition_label: t.condition_label
+    }))
 
   if (!checklist) {
     // S'il n'y a pas de checklist, on retourne tout manquant
     return {
       checklistId: null,
-      documents: requiredDocs.map(doc => ({ type: doc.type, label: doc.label, hint: doc.hint, status: 'missing' as const }))
+      documents: requiredDocs.map(doc => ({ ...doc, status: 'missing' as const }))
     }
   }
 
   // 2. Récupérer les documents uploadés
   const { data: uploadedDocs } = await supabase
     .from('onboarding_documents')
-    .select('type, status, file_url, rejection_reason')
+    .select('type, status, file_url, rejection_reason, expiration_date')
     .eq('checklist_id', checklist.id)
 
   // 3. Fusionner avec les documents requis
@@ -70,19 +81,18 @@ export async function getCollaboratorDocuments() {
     const uploaded = uploadedDocs?.filter(d => d.type === reqDoc.type).pop()
 
     return {
-      type: reqDoc.type,
-      label: reqDoc.label,
-      hint: reqDoc.hint,
+      ...reqDoc,
       status: uploaded ? uploaded.status : 'missing',
       file_url: uploaded?.file_url,
       rejection_reason: uploaded?.rejection_reason,
+      expiration_date: uploaded?.expiration_date,
     }
   })
 
-  return { checklistId: checklist.id, documents }
+  return { checklistId: checklist.id, entryDate: checklist.entry_date, documents }
 }
 
-export async function recordDocumentUpload(checklistId: string, type: string, fileName: string, fileUrl: string) {
+export async function recordDocumentUpload(checklistId: string, type: string, fileName: string, fileUrl: string, expirationDate?: string | null) {
   const supabase = await createClient()
 
   const { error } = await supabase
@@ -92,11 +102,29 @@ export async function recordDocumentUpload(checklistId: string, type: string, fi
       type,
       file_name: fileName,
       file_url: fileUrl,
-      status: 'pending' // En attente de validation RH
+      status: 'pending', // En attente de validation RH
+      expiration_date: expirationDate || null
     })
 
   if (error) {
     console.error('Erreur recordDocumentUpload:', error)
+    return { error: error.message }
+  }
+
+  return { success: true }
+}
+
+export async function updateDocumentExpiration(checklistId: string, type: string, expirationDate: string | null) {
+  const supabase = await createClient()
+
+  const { error } = await supabase
+    .from('onboarding_documents')
+    .update({ expiration_date: expirationDate })
+    .eq('checklist_id', checklistId)
+    .eq('type', type)
+
+  if (error) {
+    console.error('Erreur updateDocumentExpiration:', error)
     return { error: error.message }
   }
 
@@ -129,6 +157,13 @@ export async function updateDocumentStatus(checklistId: string, type: string, st
     const doc = updatedDocs[0]
     if (doc.file_url) {
       try {
+        // Récupérer le label du template pour nommer le fichier sur SP
+        const { data: template } = await supabase
+          .from('checklist_item_templates')
+          .select('label')
+          .eq('id', type)
+          .single()
+
         const { data: checklist } = await supabase
           .from('onboarding_checklists')
           .select('sp_folder_id')
@@ -145,8 +180,14 @@ export async function updateDocumentStatus(checklistId: string, type: string, st
             const arrayBuffer = await fileData.arrayBuffer()
             const buffer = Buffer.from(arrayBuffer)
 
+            // Nommer le fichier avec le label du template + extension originale
+            const originalExt = doc.file_name?.split('.').pop() || 'pdf'
+            const spFileName = template?.label
+              ? `${template.label}.${originalExt}`
+              : doc.file_name || 'document.pdf'
+
             // Envoyer vers SharePoint
-            await uploadFileToFolder(checklist.sp_folder_id, doc.file_name || 'document.pdf', buffer)
+            await uploadFileToFolder(checklist.sp_folder_id, spFileName, buffer)
           } else {
             console.error('Erreur téléchargement Supabase pour SP:', downloadError)
           }

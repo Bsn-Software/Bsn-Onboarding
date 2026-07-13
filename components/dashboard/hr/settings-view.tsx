@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Save, X, Loader2, CheckCircle2, GripVertical, ChevronDown, ChevronRight, FileText, Layers, PlusCircle } from 'lucide-react'
-import { getAllTemplates, createTemplate, updateTemplate, deleteTemplate, updateTemplatesOrder } from '@/app/actions/templates'
+import { getAllTemplates, createTemplate, updateTemplate, deleteTemplate, hardDeleteTemplate, updateTemplatesOrder } from '@/app/actions/templates'
 import type { ChecklistTemplate } from '@/app/actions/checklist'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -75,6 +75,9 @@ export function SettingsView() {
 
   // Accordion State
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set())
+
+  // Delete Dialog State
+  const [deleteDialog, setDeleteDialog] = useState<{ isOpen: boolean, type: 'group' | 'item', idOrLabel: string } | null>(null)
 
   const toggleCategory = (cat: string) => {
     setOpenCategories(prev => {
@@ -215,17 +218,45 @@ export function SettingsView() {
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Voulez-vous vraiment désactiver ce modèle ? Il n'apparaîtra plus pour les nouveaux collaborateurs.")) return
-    
-    try {
-      const res = await deleteTemplate(id)
-      if (res.error) throw new Error(res.error)
-      toast.success("Modèle désactivé")
+  const confirmDeleteItem = async (id: string) => {
+    setSaving(true)
+    const res = await deleteTemplate(id)
+    setSaving(false)
+    if (res.error) {
+      toast.error(res.error)
+    } else {
+      toast.success("Élément désactivé")
+      setDeleteDialog(null)
       loadData()
-    } catch (err: any) {
-      toast.error(err.message || "Erreur de suppression")
     }
+  }
+
+  const confirmDeleteGroup = async (groupLabel: string) => {
+    setSaving(true)
+    const itemsToDelete = templates.filter(t => t.is_conditional && t.condition_label === groupLabel && t.phase === activePhase)
+    
+    let hasError = false
+    for (const item of itemsToDelete) {
+      const res = await hardDeleteTemplate(item.id as string)
+      if (res.error) hasError = true
+    }
+
+    setSaving(false)
+    if (hasError) {
+      toast.error("Erreur lors de la suppression de certains éléments du groupe")
+    } else {
+      toast.success("Groupe supprimé avec succès")
+      setDeleteDialog(null)
+    }
+    loadData()
+  }
+
+  const handleDelete = (id: string) => {
+    setDeleteDialog({ isOpen: true, type: 'item', idOrLabel: id })
+  }
+
+  const handleDeleteGroup = (groupLabel: string) => {
+    setDeleteDialog({ isOpen: true, type: 'group', idOrLabel: groupLabel })
   }
 
   const filteredTemplates = templates.filter(t => t.phase === activePhase)
@@ -255,8 +286,6 @@ export function SettingsView() {
       return
     }
 
-    const itemsInCategory = templates.filter(t => t.category === categoryId && t.phase === activePhase)
-    
     // Determine dragged items globally across all categories
     const draggedItems = draggedId.startsWith('group-') 
       ? templates.filter(t => t.is_conditional && t.condition_label === draggedId.replace('group-', '') && t.phase === activePhase)
@@ -267,32 +296,79 @@ export function SettingsView() {
       return
     }
 
-    const draggedIds = new Set(draggedItems.map(t => t.id as string))
+    // Defensive clone to avoid any reference issues
+    const safeDraggedItems = draggedItems.map(t => ({ ...t }))
+    const draggedIds = new Set(safeDraggedItems.map(t => t.id as string))
     // We only keep items already in the target category that were not dragged
+    const itemsInCategory = templates.filter(t => t.category === categoryId && t.phase === activePhase).sort((a, b) => a.order_index - b.order_index)
     const newItems = itemsInCategory.filter(t => !draggedIds.has(t.id))
 
     // Find the insertion point
     let targetIndex = newItems.findIndex(t => 
       dropTargetId.startsWith('group-') 
-        ? (t.is_conditional && t.condition_label === dropTargetId.replace('group-', ''))
+        ? (t.is_conditional === true && t.condition_label === dropTargetId.replace('group-', ''))
         : t.id === dropTargetId
     )
     if (targetIndex === -1) targetIndex = newItems.length
 
-    // Update the dragged items with the new category
-    const movedItems = draggedItems.map(t => ({ ...t, category: categoryId }))
+    // Determine if we should adopt the group condition based on the drop target
+    let targetConditionLabel: string | null = null
+    let targetIsConditional = false
 
-    newItems.splice(targetIndex, 0, ...movedItems as ChecklistTemplate[])
+    const isDraggingGroup = draggedId.startsWith('group-')
 
-    const updates = newItems.map((item, index) => ({
-      id: item.id,
-      order_index: (index + 1) * 10,
-      category: categoryId
-    }))
+    if (!isDraggingGroup) {
+      if (dropTargetId.startsWith('group-')) {
+        targetConditionLabel = dropTargetId.replace('group-', '').trim()
+        targetIsConditional = true
+      } else if (dropTargetId !== categoryId) {
+        const targetItem = templates.find(t => t.id === dropTargetId)
+        if (targetItem?.is_conditional === true && targetItem.condition_label) {
+          targetConditionLabel = targetItem.condition_label.trim()
+          targetIsConditional = true
+        }
+      }
+    }
+
+    // Update the dragged items with the new category and potentially the new group
+    const movedItems = safeDraggedItems.map(t => {
+      const updateObj: any = { ...t, category: categoryId }
+      if (!isDraggingGroup) {
+        updateObj.is_conditional = targetIsConditional
+        updateObj.condition_label = targetConditionLabel
+      }
+      return updateObj
+    })
+
+    newItems.splice(targetIndex, 0, ...movedItems)
+
+    const updates = newItems.map((item, index) => {
+      const isMoved = movedItems.some(m => m.id === item.id)
+      return {
+        id: item.id as string,
+        order_index: (index + 1) * 10,
+        category: categoryId,
+        ...(isMoved && !isDraggingGroup ? {
+          is_conditional: targetIsConditional,
+          condition_label: targetConditionLabel
+        } : {})
+      }
+    })
 
     setTemplates(prev => prev.map(t => {
       const update = updates.find(u => u.id === t.id)
-      return update ? { ...t, order_index: update.order_index, category: update.category! } : t
+      if (update) {
+        return { 
+          ...t, 
+          order_index: update.order_index, 
+          category: update.category!,
+          ...(update.is_conditional !== undefined ? {
+            is_conditional: update.is_conditional,
+            condition_label: update.condition_label
+          } : {})
+        }
+      }
+      return t
     }).sort((a, b) => a.order_index - b.order_index))
 
     handleDragEnd()
@@ -668,27 +744,28 @@ export function SettingsView() {
     let currentGroupItems: ChecklistTemplate[] = []
 
     items.forEach((t) => {
-      if (t.is_conditional && t.condition_label) {
+      // Strict check: must be explicitly true and have a valid label
+      if (t.is_conditional === true && typeof t.condition_label === 'string' && t.condition_label.trim() !== '') {
         if (t.condition_label !== currentGroupLabel) {
           if (currentGroupLabel) {
-            blocks.push({ type: 'group', id: `group-${currentGroupLabel}`, label: currentGroupLabel, items: currentGroupItems })
+            blocks.push({ type: 'group', id: `group-${currentGroupLabel}`, label: currentGroupLabel, items: [...currentGroupItems] })
           }
           currentGroupLabel = t.condition_label
-          currentGroupItems = [t]
+          currentGroupItems = [{...t}]
         } else {
-          currentGroupItems.push(t)
+          currentGroupItems.push({...t})
         }
       } else {
         if (currentGroupLabel) {
-          blocks.push({ type: 'group', id: `group-${currentGroupLabel}`, label: currentGroupLabel, items: currentGroupItems })
+          blocks.push({ type: 'group', id: `group-${currentGroupLabel}`, label: currentGroupLabel, items: [...currentGroupItems] })
           currentGroupLabel = null
           currentGroupItems = []
         }
-        blocks.push({ type: 'item', id: t.id, items: [t] })
+        blocks.push({ type: 'item', id: t.id as string, items: [{...t}] })
       }
     })
     if (currentGroupLabel) {
-      blocks.push({ type: 'group', id: `group-${currentGroupLabel}`, label: currentGroupLabel, items: currentGroupItems })
+      blocks.push({ type: 'group', id: `group-${currentGroupLabel}`, label: currentGroupLabel, items: [...currentGroupItems] })
     }
 
     blocks.forEach((block, blockIndex) => {
@@ -697,7 +774,7 @@ export function SettingsView() {
       } else {
         rows.push(
           <tr 
-            key={block.id}
+            key={`${block.id}-${blockIndex}`}
             draggable={true}
             onDragStart={(e) => handleDragStart(e, block.id)}
             onDragOver={handleDragOver}
@@ -715,7 +792,7 @@ export function SettingsView() {
                 <GripVertical className="size-4 text-slate-300 group-hover:text-slate-500 cursor-grab active:cursor-grabbing" />
               </div>
             </td>
-            <td colSpan={4} className="px-4 pt-4 pb-1">
+            <td colSpan={3} className="px-4 pt-4 pb-1">
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1">
                   <Layers className="size-3 text-amber-600" />
@@ -724,6 +801,15 @@ export function SettingsView() {
                 </div>
                 <span className="text-xs text-slate-400">{block.items.length} item{block.items.length > 1 ? 's' : ''}</span>
               </div>
+            </td>
+            <td className="px-4 pt-4 pb-1 text-right">
+              <button 
+                onClick={(e) => { e.stopPropagation(); handleDeleteGroup(block.label!); }} 
+                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" 
+                title="Supprimer le groupe entier (Définitif)"
+              >
+                <Trash2 className="size-4" />
+              </button>
             </td>
           </tr>
         )
@@ -794,7 +880,7 @@ export function SettingsView() {
             <Edit2 className="size-4" />
           </button>
           {t.is_active && (
-            <button onClick={() => handleDelete(t.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" title="Désactiver">
+            <button onClick={() => handleDelete(t.id as string)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" title="Désactiver">
               <Trash2 className="size-4" />
             </button>
           )}
@@ -803,8 +889,63 @@ export function SettingsView() {
     </tr>
   )
 
+  const renderDeleteDialog = () => {
+    if (!deleteDialog?.isOpen) return null
+
+    const isGroup = deleteDialog.type === 'group'
+    
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="p-6">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="flex items-center justify-center size-12 rounded-full bg-red-50 shrink-0">
+                <Trash2 className="size-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">
+                  {isGroup ? "Supprimer le groupe ?" : "Désactiver cet élément ?"}
+                </h3>
+                <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+                  {isGroup 
+                    ? `Voulez-vous vraiment supprimer définitivement le groupe "${deleteDialog.idOrLabel}" et toutes ses tâches ? Cette action est irréversible.`
+                    : "Il n'apparaîtra plus pour les nouveaux collaborateurs, mais restera conservé pour l'historique."
+                  }
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 mt-8">
+              <button
+                onClick={() => setDeleteDialog(null)}
+                className="px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => {
+                  if (isGroup) {
+                    confirmDeleteGroup(deleteDialog.idOrLabel)
+                  } else {
+                    confirmDeleteItem(deleteDialog.idOrLabel)
+                  }
+                }}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-all shadow-sm disabled:opacity-50 active:scale-[0.98]"
+              >
+                {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+                {isGroup ? "Supprimer définitivement" : "Désactiver"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-col min-h-full w-full max-w-5xl mx-auto py-8">
+    <div className="flex flex-col min-h-full w-full max-w-5xl mx-auto py-8 relative">
+      {renderDeleteDialog()}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Paramètres des Modèles</h1>
         <p className="text-slate-500 mt-1">Gérez les documents et tâches demandés lors de l'intégration ou du départ.</p>

@@ -103,7 +103,8 @@ export async function getCollaborators(): Promise<CollaboratorRow[]> {
         type,
         status,
         file_url,
-        file_name
+        file_name,
+        expiration_date
       )
     `)
     .order('created_at', { ascending: false })
@@ -216,7 +217,8 @@ export async function getCollaborator(checklistId: string): Promise<Collaborator
         type,
         status,
         file_url,
-        file_name
+        file_name,
+        expiration_date
       )
     `)
     .eq('id', checklistId)

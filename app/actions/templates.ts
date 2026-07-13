@@ -92,7 +92,30 @@ export async function deleteTemplate(id: string) {
   return { success: true }
 }
 
-export async function updateTemplatesOrder(updates: { id: string, order_index: number, category?: string }[]) {
+export async function hardDeleteTemplate(id: string) {
+  const supabase = await createClient()
+
+  // Suppression physique pour corriger les erreurs de manipulation
+  const { error } = await supabase
+    .from('checklist_item_templates')
+    .delete()
+    .eq('id', id)
+
+  if (error) {
+    console.error('Erreur hardDeleteTemplate:', error)
+    return { error: error.message }
+  }
+
+  return { success: true }
+}
+
+export async function updateTemplatesOrder(updates: { 
+  id: string, 
+  order_index: number, 
+  category?: string,
+  is_conditional?: boolean,
+  condition_label?: string | null
+}[]) {
   const supabase = await createClient()
 
   // Supabase doesn't support bulk upsert effectively with just update
@@ -100,6 +123,10 @@ export async function updateTemplatesOrder(updates: { id: string, order_index: n
   for (const item of updates) {
     const payload: any = { order_index: item.order_index }
     if (item.category) payload.category = item.category
+    if (item.is_conditional !== undefined) {
+      payload.is_conditional = item.is_conditional
+      payload.condition_label = item.condition_label
+    }
 
     const { error } = await supabase
       .from('checklist_item_templates')

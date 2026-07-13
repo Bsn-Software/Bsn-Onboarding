@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
 
   // On vérifie si c'est un recovery pour renvoyer vers la bonne page
   const isRecovery = request.url.includes('type=recovery') || body.type === 'recovery'
-  
+
   // On construit la réponse d'abord, puis on y attache les cookies.
   const response = NextResponse.json({ redirectTo: '/update-password' }) // On force sur update-password pour l'onboarding
 

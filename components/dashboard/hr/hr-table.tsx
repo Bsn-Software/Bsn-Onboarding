@@ -303,11 +303,17 @@ export function HRTable({ onViewDetail, phase = 'entry' }: { onViewDetail?: (che
                     <td className="px-4 py-3 hidden lg:table-cell">
                       <div className="flex flex-wrap gap-1">
                         {CATEGORIES.map(cat => {
-                          const catTemplates = templatesByCategory[cat] ?? []
-                          const done = row.completions.filter(c =>
-                            c.completed_at != null &&
-                            catTemplates.some(t => t.id === c.template_id)
-                          ).length
+                          // Filtrer les templates pour ne garder que ceux applicables à ce collaborateur (non conditionnels ou condition active)
+                          const catTemplates = (templatesByCategory[cat] ?? []).filter(t => 
+                            !t.is_conditional || (t.condition_label && row.active_conditions?.includes(t.condition_label))
+                          )
+                          const done = catTemplates.filter(t => {
+                            if (t.is_document) {
+                              const doc = row.documents?.find(d => d.type === t.id)
+                              return doc?.status === 'validated' || doc?.status === 'pending'
+                            }
+                            return row.completions.some(c => c.template_id === t.id && c.completed_at != null && !c.is_not_applicable)
+                          }).length
                           return (
                             <CategoryBadge
                               key={cat}

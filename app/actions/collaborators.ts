@@ -122,7 +122,7 @@ export async function createCollaborator(input: CreateCollaboratorInput) {
   }
 
   revalidatePath('/')
-  return { success: true, checklistId: checklist.id, collaboratorId }
+  return { success: true, checklistId: checklist.id, collaboratorId, spFolderCreated: !!spFolderId, spFolderUrl }
 }
 
 // ─────────────────────────────────────────────────────────────

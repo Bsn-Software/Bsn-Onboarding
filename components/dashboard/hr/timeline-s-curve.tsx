@@ -195,7 +195,14 @@ export function TimelineSCurve({ data, onToggleItem, onRefresh }: TimelineSCurve
     if (!checklistId) return
     setProcessingDoc(type)
     try {
-      await updateDocumentStatus(checklistId, type, status)
+      const result = await updateDocumentStatus(checklistId, type, status)
+      if (status === 'validated') {
+        if (result.spUploaded) {
+          toast.success('Document validé et synchronisé sur SharePoint ✓')
+        } else {
+          toast.success('Document validé', { description: 'Non synchronisé SharePoint (pas de dossier ou de fichier associé)' })
+        }
+      }
       onRefresh?.()
     } finally {
       setProcessingDoc(null)

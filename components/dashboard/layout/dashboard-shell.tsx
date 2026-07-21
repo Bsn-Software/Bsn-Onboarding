@@ -10,7 +10,7 @@ import { StaffSidebar } from "./staff-sidebar"
 import { Topbar } from "./topbar"
 import { SettingsView } from "../hr/settings-view"
 
-type ViewType = 'entrees' | 'sorties' | 'absences' | 'turnover' | 'parametres'
+type ViewType = 'entrees' | 'sorties' | 'absences' | 'turnover' | 'ead' | 'parametres'
 
 export function DashboardShell({
   user
@@ -27,21 +27,25 @@ export function DashboardShell({
   }
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden bg-slate-50">
-      <Topbar
-        breadcrumb={NAV_LABELS[activeId]}
-        user={user}
-        onSwitchToCollaborator={() => setIsCollaboratorView(true)}
-      />
-      <div className="flex flex-1 overflow-hidden">
-        <StaffSidebar activeId={activeId} onSelect={(id) => { setActiveId(id); setActiveView(id as ViewType); setSelectedCollaboratorId(null); }} />
+    <div className="flex h-svh flex-col overflow-hidden bg-slate-50 print:h-auto print:overflow-visible print:bg-white">
+      <div className="print:hidden">
+        <Topbar
+          breadcrumb={NAV_LABELS[activeId]}
+          user={user}
+          onSwitchToCollaborator={() => setIsCollaboratorView(true)}
+        />
+      </div>
+      <div className="flex flex-1 overflow-hidden print:overflow-visible">
+        <div className="print:hidden">
+          <StaffSidebar activeId={activeId} onSelect={(id) => { setActiveId(id); setActiveView(id as ViewType); setSelectedCollaboratorId(null); }} />
+        </div>
 
         {activeView !== 'parametres' && (
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-w-0 flex-1 flex-col print:overflow-visible">
             {/* Mobile tabs */}
             <nav
               aria-label="Navigation"
-              className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3 py-2 md:hidden"
+              className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3 py-2 md:hidden print:hidden"
             >
               {STAFF_NAV.map((item) => {
                 const isActive = item.id === activeId
@@ -64,7 +68,7 @@ export function DashboardShell({
               })}
             </nav>
 
-            <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+            <main className="flex-1 overflow-y-auto p-4 sm:p-6 print:overflow-visible print:p-0 scrollbar-hide">
               {selectedCollaboratorId ? (
                 <CollaboratorDetailView
                   checklistId={selectedCollaboratorId}

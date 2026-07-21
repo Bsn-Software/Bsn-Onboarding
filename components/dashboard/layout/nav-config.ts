@@ -1,5 +1,6 @@
 import {
   ClipboardCheck,
+  ClipboardList,
   Receipt,
   Server,
   UserPlus,
@@ -41,6 +42,12 @@ export const STAFF_NAV: NavItem[] = [
     label: "Suivi du turnover",
     description: "Analyses, taux de rotation et statistiques RH.",
     icon: TrendingUp,
+  },
+  {
+    id: "ead",
+    label: "Suivi des EAD",
+    description: "Entretiens annuels de développement digitalisés.",
+    icon: ClipboardList,
   },
 ];
 

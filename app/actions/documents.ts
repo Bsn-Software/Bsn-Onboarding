@@ -153,6 +153,7 @@ export async function updateDocumentStatus(checklistId: string, type: string, st
   }
 
   // 2. Synchronisation avec SharePoint si validé
+  let spUploaded = false
   if (status === 'validated' && updatedDocs && updatedDocs.length > 0) {
     const doc = updatedDocs[0]
     if (doc.file_url) {
@@ -188,6 +189,7 @@ export async function updateDocumentStatus(checklistId: string, type: string, st
 
             // Envoyer vers SharePoint
             await uploadFileToFolder(checklist.sp_folder_id, spFileName, buffer)
+            spUploaded = true
           } else {
             console.error('Erreur téléchargement Supabase pour SP:', downloadError)
           }
@@ -199,7 +201,7 @@ export async function updateDocumentStatus(checklistId: string, type: string, st
     }
   }
 
-  return { success: true }
+  return { success: true, spUploaded }
 }
 
 export async function toggleDocument(checklistId: string, type: string, currentStatus: string | undefined) {

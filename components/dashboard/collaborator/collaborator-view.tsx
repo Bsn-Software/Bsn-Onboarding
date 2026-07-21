@@ -14,18 +14,23 @@ import {
   Check,
   Layers,
   X,
-  Calendar
+  Calendar,
+  ArrowLeft,
+  FileBadge
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { InitialsAvatar } from '../shared/initials-avatar'
 import { createClient } from '@/lib/supabase/client'
 import { 
-  getCollaboratorDocuments, 
+  getCollaboratorDocuments,
   recordDocumentUpload, 
   type DocumentStatus 
 } from '@/app/actions/documents'
+import { getEntretiensByCollaborator, getManagerTeam, createEntretien } from '@/app/actions/ead'
+import { EadView } from '../ead/ead-view'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 // ─────────────────────────────────────────────────────────────
 // Labels lisibles par catégorie
@@ -50,6 +55,13 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [activeUploadType, setActiveUploadType] = useState<string | null>(null)
 
+  // ── Navigation et EAD ──
+  const [activeTab, setActiveTab] = useState<'onboarding' | 'mes_ead' | 'equipe_ead'>('onboarding')
+  const [myEads, setMyEads] = useState<any[]>([])
+  const [team, setTeam] = useState<any[]>([])
+  const [teamEads, setTeamEads] = useState<Record<string, any[]>>({})
+  const [selectedEadId, setSelectedEadId] = useState<string | null>(null)
+
   const loadData = async () => {
     setLoading(true)
     try {
@@ -57,8 +69,39 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
       setChecklistId(docRes.checklistId)
       setDocuments(docRes.documents)
       if (docRes.entryDate) setEntryDate(docRes.entryDate)
+
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        // Charger mes EAD
+        const eadRes = await getEntretiensByCollaborator(user.id)
+        if (eadRes.data) setMyEads(eadRes.data)
+
+        // Charger mon équipe si je suis manager
+        const teamRes = await getManagerTeam()
+        if (teamRes.data && teamRes.data.length > 0) {
+          setTeam(teamRes.data)
+          // Charger les EAD de l'équipe
+          const teamEadsMap: Record<string, any[]> = {}
+          for (const member of teamRes.data) {
+            const mRes = await getEntretiensByCollaborator(member.id)
+            if (mRes.data) teamEadsMap[member.id] = mRes.data
+          }
+          setTeamEads(teamEadsMap)
+        }
+      }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleCreateTeamEad = async (memberId: string) => {
+    const res = await createEntretien(memberId, new Date().getFullYear())
+    if (res.error) toast.error(res.error)
+    else {
+      toast.success("Entretien créé")
+      loadData()
+      setSelectedEadId(res.id)
     }
   }
 
@@ -229,6 +272,21 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
   const totalDocs = documents.length
   const progressDocs = totalDocs > 0 ? Math.round((completedDocs / totalDocs) * 100) : 0
 
+  if (selectedEadId) {
+    return (
+      <div className="flex h-svh w-full flex-col bg-slate-50 overflow-hidden">
+        <header className="flex h-14 shrink-0 items-center border-b border-slate-200 bg-white px-4 shadow-sm">
+          <button onClick={() => { setSelectedEadId(null); loadData(); }} className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors">
+            <ArrowLeft className="size-4" /> Retour
+          </button>
+        </header>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-hide">
+          <EadView entretienId={selectedEadId} onBack={() => { setSelectedEadId(null); loadData(); }} />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-svh flex-col bg-slate-50">
       <input
@@ -297,12 +355,50 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
                 Bienvenue, {user?.name?.split(' ')[0] || "nouveau collaborateur"}.
               </h1>
               <p className="text-sm leading-relaxed text-slate-500 text-pretty max-w-xl">
-                Suivez ici l'avancement de votre intégration chez BSN Engineering. 
-                Complétez votre dossier et découvrez les grandes étapes de votre arrivée !
+                Gérez ici votre dossier d'intégration et vos entretiens annuels.
               </p>
             </div>
 
-            {/* PROGRESS BAR GLOBAL */}
+            {/* ── Navigation Onglets ── */}
+            <div className="flex items-center gap-6 border-b border-slate-200 mb-8 overflow-x-auto shrink-0">
+              <button
+                onClick={() => setActiveTab('onboarding')}
+                className={cn(
+                  "pb-3 text-sm font-medium transition-colors relative whitespace-nowrap",
+                  activeTab === 'onboarding' ? "text-[#00b2de]" : "text-slate-500 hover:text-slate-800"
+                )}
+              >
+                Mon dossier d'intégration
+                {activeTab === 'onboarding' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#00b2de] rounded-t-full" />}
+              </button>
+              <button
+                onClick={() => setActiveTab('mes_ead')}
+                className={cn(
+                  "pb-3 text-sm font-medium transition-colors relative whitespace-nowrap",
+                  activeTab === 'mes_ead' ? "text-[#00b2de]" : "text-slate-500 hover:text-slate-800"
+                )}
+              >
+                Mes Entretiens EAD
+                {activeTab === 'mes_ead' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#00b2de] rounded-t-full" />}
+              </button>
+              {team.length > 0 && (
+                <button
+                  onClick={() => setActiveTab('equipe_ead')}
+                  className={cn(
+                    "pb-3 text-sm font-medium transition-colors relative whitespace-nowrap flex items-center gap-2",
+                    activeTab === 'equipe_ead' ? "text-[#00b2de]" : "text-slate-500 hover:text-slate-800"
+                  )}
+                >
+                  Mon Équipe (Manager)
+                  <span className="rounded-full bg-[#00b2de]/10 px-2 py-0.5 text-xs text-[#00b2de]">{team.length}</span>
+                  {activeTab === 'equipe_ead' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#00b2de] rounded-t-full" />}
+                </button>
+              )}
+            </div>
+
+            {activeTab === 'onboarding' && (
+              <>
+                {/* PROGRESS BAR GLOBAL */}
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm mb-6">
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium text-slate-900">
@@ -388,9 +484,112 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
               })}
             </div>
             
-            <p className="mt-8 flex justify-center text-xs text-slate-400 text-center max-w-sm mx-auto">
-              Vos données sont stockées de manière sécurisée et ne sont accessibles que par le département des Ressources Humaines de BSN Engineering.
-            </p>
+                <p className="mt-8 flex justify-center text-xs text-slate-400 text-center max-w-sm mx-auto">
+                  Vos données sont stockées de manière sécurisée et ne sont accessibles que par le département des Ressources Humaines de BSN Engineering.
+                </p>
+              </>
+            )}
+
+            {activeTab === 'mes_ead' && (
+              <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="rounded-xl border border-[#00b2de]/20 bg-[#00b2de]/5 p-5 mb-4">
+                  <h3 className="font-semibold text-slate-900">Mes Entretiens Annuels</h3>
+                  <p className="text-sm text-slate-600 mt-1">Retrouvez ici l'historique de vos EAD. Vous pourrez les remplir une fois initialisés par votre manager ou les RH.</p>
+                </div>
+                
+                {myEads.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-slate-200 rounded-xl bg-white">
+                    <FileBadge className="size-10 text-slate-300 mb-3" />
+                    <p className="text-sm font-medium text-slate-900">Aucun entretien pour le moment</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {myEads.map(ead => (
+                      <div key={ead.id} onClick={() => setSelectedEadId(ead.id)} className="group flex cursor-pointer flex-col gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:border-[#00b2de]/50 hover:shadow-md">
+                        <div className="flex items-center gap-3">
+                          <div className="flex size-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                            <Calendar className="size-5" />
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-slate-900">EAD {ead.annee}</h4>
+                            <p className="text-xs text-slate-500">Mis à jour le {new Date(ead.updated_at).toLocaleDateString('fr-FR')}</p>
+                          </div>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between">
+                          <span className={cn(
+                            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border",
+                            ead.statut === 'signe' ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                            ead.statut === 'soumis' ? "bg-amber-50 text-amber-700 border-amber-200" :
+                            "bg-slate-50 text-slate-700 border-slate-200"
+                          )}>
+                            {ead.statut === 'signe' ? 'Clôturé' : 'En cours'}
+                          </span>
+                          <span className="text-xs font-medium text-[#00b2de] group-hover:underline">Ouvrir &rarr;</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'equipe_ead' && team.length > 0 && (
+              <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-50 p-5">
+                  <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+                    <Layers className="size-5 text-emerald-600" />
+                    Espace Manager
+                  </h3>
+                  <p className="text-sm text-slate-600 mt-1">Vous pouvez consulter, modifier et signer les entretiens des membres de votre équipe.</p>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  {team.map(member => {
+                    const eads = teamEads[member.id] || []
+                    return (
+                      <div key={member.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+                        <div className="flex items-center justify-between bg-slate-50 p-4 border-b border-slate-100">
+                          <div className="flex items-center gap-3">
+                            <InitialsAvatar name={`${member.first_name} ${member.last_name}`} className="size-8 text-xs" />
+                            <div>
+                              <p className="font-semibold text-slate-900 text-sm">{member.first_name} {member.last_name}</p>
+                              <p className="text-xs text-slate-500">{member.job_title || 'Collaborateur'}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleCreateTeamEad(member.id)}
+                            className="text-xs font-medium bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm"
+                          >
+                            + Créer EAD {new Date().getFullYear()}
+                          </button>
+                        </div>
+                        <div className="p-4 bg-white">
+                          {eads.length === 0 ? (
+                            <p className="text-sm text-slate-500 text-center py-4">Aucun entretien pour ce collaborateur.</p>
+                          ) : (
+                            <div className="flex flex-wrap gap-3">
+                              {eads.map(ead => (
+                                <button
+                                  key={ead.id}
+                                  onClick={() => setSelectedEadId(ead.id)}
+                                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 hover:border-[#00b2de] hover:bg-blue-50/50 transition-colors"
+                                >
+                                  <FileBadge className="size-4 text-[#00b2de]" />
+                                  <div className="flex flex-col items-start text-left">
+                                    <span className="text-sm font-medium text-slate-900">Année {ead.annee}</span>
+                                    <span className="text-[10px] text-slate-500">{ead.statut === 'signe' ? 'Clôturé' : 'En cours'}</span>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
 

@@ -55,10 +55,23 @@ export function NewCollaboratorModal({ onClose, onCreated }: Props) {
           if (inviteResult.error) {
             toast.error(`Dossier créé, mais erreur d'email : ${inviteResult.error}`)
           } else {
-            toast.success("Dossier créé et invitation envoyée !")
+            toast.success('Dossier créé et invitation envoyée !')
           }
         } else {
-          toast.success("Dossier créé avec succès !")
+          toast.success('Dossier créé avec succès !')
+        }
+
+        // Feedback SharePoint
+        if (result.spFolderCreated) {
+          toast.success('Dossier SharePoint créé ✓', {
+            description: result.spFolderUrl
+              ? `Collaborateurs/Onboarding/${fd.get('last_name')?.toString().toUpperCase()} ${fd.get('first_name')}`
+              : undefined,
+          })
+        } else {
+          toast.warning('Dossier SharePoint non créé', {
+            description: 'Vérifiez les logs serveur pour plus de détails.',
+          })
         }
 
         onCreated()

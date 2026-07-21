@@ -1,4 +1,5 @@
 import { HRTable } from '../hr/hr-table'
+import { EadView } from '../ead/ead-view'
 import { NAV_LABELS } from './nav-config'
 
 export function ContentArea({ activeId, onViewDetail }: { activeId: string, onViewDetail?: (id: string) => void }) {
@@ -28,6 +29,10 @@ export function ContentArea({ activeId, onViewDetail }: { activeId: string, onVi
         <HRTable onViewDetail={onViewDetail} phase="exit" />
       </div>
     )
+  }
+
+  if (activeId === 'ead') {
+    return <EadView />
   }
 
   // Placeholder pour les autres onglets

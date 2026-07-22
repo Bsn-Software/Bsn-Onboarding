@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { CollaboratorView } from "../collaborator/collaborator-view"
 import { CollaboratorDetailView } from "../hr/collaborator-detail-view"
@@ -19,10 +20,24 @@ export function DashboardShell({
   user: { name: string; role: string; email: string }
   isManagerOrHR?: boolean
 }) {
-  const [activeId, setActiveId] = useState<string>(STAFF_NAV[0].id)
-  const [activeView, setActiveView] = useState<ViewType>('entrees')
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  
+  const initialTab = searchParams.get('tab') || STAFF_NAV[0].id
+  
+  const [activeId, setActiveId] = useState<string>(initialTab)
+  const [activeView, setActiveView] = useState<ViewType>(initialTab as ViewType)
   const [isCollaboratorView, setIsCollaboratorView] = useState(false)
   const [selectedCollaboratorId, setSelectedCollaboratorId] = useState<string | null>(null)
+
+  // Mettre à jour l'URL (sans recharger) quand on change d'onglet
+  // pour que le back/forward fonctionne et garde l'état
+  const handleSelectTab = (id: string) => {
+    setActiveId(id)
+    setActiveView(id as ViewType)
+    setSelectedCollaboratorId(null)
+    router.replace(`/?tab=${id}`, { scroll: false })
+  }
 
   if (isCollaboratorView) {
     return <CollaboratorView onBack={() => setIsCollaboratorView(false)} />
@@ -38,8 +53,8 @@ export function DashboardShell({
         />
       </div>
       <div className="flex flex-1 overflow-hidden print:overflow-visible">
-        <div className="print:hidden">
-          <StaffSidebar activeId={activeId} isManagerOrHR={isManagerOrHR} onSelect={(id) => { setActiveId(id); setActiveView(id as ViewType); setSelectedCollaboratorId(null); }} />
+        <div className="h-full print:hidden">
+          <StaffSidebar activeId={activeId} isManagerOrHR={isManagerOrHR} onSelect={handleSelectTab} />
         </div>
 
         {activeView !== 'parametres' && (

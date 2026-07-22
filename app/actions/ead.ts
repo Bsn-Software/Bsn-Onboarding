@@ -184,17 +184,40 @@ export async function signEntretien(entretienId: string) {
   if (user.id === entretien.collaborator_id) {
     role_signataire = 'collaborateur'
   } else {
-    // Vérifier si l'utilisateur est le manager du collaborateur
+    // Vérifier si l'utilisateur est le manager du collaborateur ou s'il est RH
     const { data: profile } = await supabase
+      .from('profiles')
+      .select('manager_id, role')
+      .eq('id', user.id)
+      .single()
+
+    const { data: targetProfile } = await supabase
       .from('profiles')
       .select('manager_id')
       .eq('id', entretien.collaborator_id)
       .single()
       
-    if (profile?.manager_id === user.id) {
+    if (targetProfile?.manager_id === user.id) {
       role_signataire = 'manager'
+    } else if (profile?.role === 'hr') {
+      // RH : déterminer quelle signature manque
+      const { data: existingSigs } = await supabase
+        .from('ead_signatures')
+        .select('role_signataire')
+        .eq('entretien_id', entretienId)
+      
+      const hasManager = existingSigs?.some(s => s.role_signataire === 'manager')
+      const hasCollab = existingSigs?.some(s => s.role_signataire === 'collaborateur')
+
+      if (!hasManager) {
+        role_signataire = 'manager'
+      } else if (!hasCollab) {
+        role_signataire = 'collaborateur'
+      } else {
+        return { error: "L'entretien est déjà entièrement signé." }
+      }
     } else {
-      return { error: "Vous n'êtes ni le collaborateur ni son manager. Vous ne pouvez pas signer." }
+      return { error: "Vous n'êtes ni le collaborateur ni son manager (ni RH). Vous ne pouvez pas signer." }
     }
   }
 
@@ -320,20 +343,14 @@ export async function getEadDashboard(): Promise<DashboardResult> {
   }
 
   // 4. Récupérer les collaborateurs (tous ou juste l'équipe)
+  // Note : on évite le self-join sur profiles (contrainte FK auto-référentielle
+  // dont le nom exact peut varier selon la version de Supabase/PostgREST).
+  // On fait deux requêtes séparées à la place.
   const currentYear = new Date().getFullYear()
 
   let profilesQuery = supabase
     .from('profiles')
-    .select(`
-      id,
-      first_name,
-      last_name,
-      job_title,
-      bu,
-      email,
-      manager_id,
-      manager:profiles!profiles_manager_id_fkey(first_name, last_name)
-    `)
+    .select('id, first_name, last_name, job_title, bu, email, manager_id')
     .eq('role', 'collaborator')
     .order('last_name')
 
@@ -351,6 +368,21 @@ export async function getEadDashboard(): Promise<DashboardResult> {
 
   if (!profiles || profiles.length === 0) {
     return { rows: [], userRole: isHR ? 'hr' : 'manager' }
+  }
+
+  // 4b. Charger les noms des managers en une 2e requête sur les IDs uniques
+  const managerIds = [...new Set(profiles.map(p => p.manager_id).filter(Boolean))] as string[]
+  const managerMap = new Map<string, { first_name: string | null; last_name: string | null }>()
+
+  if (managerIds.length > 0) {
+    const { data: managers } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name')
+      .in('id', managerIds)
+
+    if (managers) {
+      managers.forEach(m => managerMap.set(m.id, { first_name: m.first_name, last_name: m.last_name }))
+    }
   }
 
   // 5. Récupérer les EAD de l'année courante pour ces collaborateurs
@@ -371,8 +403,7 @@ export async function getEadDashboard(): Promise<DashboardResult> {
   const entretienMap = new Map((entretiens || []).map(e => [e.collaborator_id, e]))
 
   const rows: DashboardRow[] = profiles.map(p => {
-    const managerArr = p.manager as any
-    const manager = Array.isArray(managerArr) ? managerArr[0] : managerArr
+    const manager = p.manager_id ? managerMap.get(p.manager_id) ?? null : null
     return {
       profile: {
         id: p.id,

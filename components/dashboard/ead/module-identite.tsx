@@ -101,7 +101,7 @@ function ChampSaisie({
       </label>
       <input
         type={type}
-        value={value}
+        value={value ?? ''}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         placeholder={placeholder}

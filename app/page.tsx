@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { CollaboratorView } from "@/components/dashboard/collaborator/collaborator-view"
@@ -34,5 +35,9 @@ export default async function Page() {
 
   // RH → dashboard complet
   // isManagerOrHR = true pour les RH (toujours accès au dashboard EAD)
-  return <DashboardShell user={currentUser} isManagerOrHR={true} />
+  return (
+    <Suspense fallback={<div className="flex h-svh items-center justify-center">Chargement...</div>}>
+      <DashboardShell user={currentUser} isManagerOrHR={true} />
+    </Suspense>
+  )
 }

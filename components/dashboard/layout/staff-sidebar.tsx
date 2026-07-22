@@ -15,7 +15,7 @@ export function StaffSidebar({
   isManagerOrHR?: boolean
 }) {
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
+    <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Navigation principale">

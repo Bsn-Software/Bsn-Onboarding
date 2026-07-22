@@ -12,7 +12,7 @@ export function EadPageClient({ entretienId }: { entretienId: string }) {
       {/* Topbar de navigation */}
       <header className="flex h-14 shrink-0 items-center gap-4 border-b border-slate-200 bg-white px-4 shadow-sm print:hidden">
         <button
-          onClick={() => router.back()}
+          onClick={() => router.push('/?tab=ead')}
           className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-900 transition-colors"
         >
           <ArrowLeft className="size-4" />
@@ -25,10 +25,10 @@ export function EadPageClient({ entretienId }: { entretienId: string }) {
       </header>
 
       {/* Contenu de l'entretien */}
-      <div className="flex-1 overflow-y-auto scrollbar-hide">
+      <div className="flex-1 overflow-y-auto scrollbar-hide mt-5 mb-5">
         <EadView
           entretienId={entretienId}
-          onBack={() => router.back()}
+          onBack={() => router.push('/?tab=ead')}
         />
       </div>
     </div>

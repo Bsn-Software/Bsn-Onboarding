@@ -60,7 +60,7 @@ export default function LoginPage() {
   }, [])
 
   useEffect(() => {
-    if (state?.success) {
+    if ((state as any)?.success) {
       router.refresh()
       router.push('/')
     }

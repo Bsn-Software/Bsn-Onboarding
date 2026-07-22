@@ -245,6 +245,36 @@ Deux champs texte côte à côte :
 
 Comportement : une fois les deux signatures posées, le formulaire passe en **lecture seule** (aucune modification possible sans réouverture explicite par un RH/admin).
 
+### Module 17 — Dashboard de suivi des EAD (vue RH / Manager)
+*(ajouté après coup — c'est la vue d'ensemble RH, distincte du formulaire lui-même)*
+
+Le formulaire (modules 1-16) est l'EAD **d'un** collaborateur. Ce module est la vue de **pilotage** pour RH/Manager : qui doit faire un EAD, qui l'a déjà fait, où en est chacun. Sans ce module, le seul point d'entrée est la fiche individuelle de chaque collaborateur — ce qui ne permet pas de piloter une campagne.
+
+**Accès** : nouvelle entrée dans la navigation principale (pas seulement dans la fiche collaborateur). Vue RH = tous les collaborateurs. Vue Manager = uniquement son équipe (même filtre que la RLS déjà en place sur `manager_id`). Le rôle Collaborateur n'a pas accès à ce dashboard (il a déjà sa propre vue dans son profil).
+
+| Colonne | Type | Remarque |
+|---|---|---|
+| Collaborateur (nom, prénom, fonction, BU) | affichage | |
+| Manager | affichage | masqué en vue Manager, utile en vue RH |
+| Statut EAD année en cours | badge calculé | Non commencé / Brouillon / En attente signature Manager / En attente signature Collaborateur / Terminé |
+| Date du dernier EAD réalisé | `date` (lecture seule) | avec lien vers l'EAD archivé |
+| Échéance | `date` éditable manuellement | **pas de calcul automatique pour l'instant — la règle métier n'est pas encore définie (voir section 6)** |
+| Action rapide | bouton contextuel | "Créer l'EAD" / "Reprendre" / "Consulter" selon le statut |
+
+Filtres : par statut, par BU, par Manager (vue RH), par année. Compteurs synthétiques en haut de page (non commencés / en cours / terminés).
+
+```json
+"dashboard_ead": [
+  {
+    "collaborateur_id": "",
+    "statut_annee_courante": "non_commence | brouillon | attente_signature_manager | attente_signature_collaborateur | termine",
+    "date_dernier_ead": null,
+    "date_echeance": null,
+    "entretien_id_courant": null
+  }
+]
+```
+
 ---
 
 ## 4. Règles transverses
@@ -288,6 +318,7 @@ Comportement : une fois les deux signatures posées, le formulaire passe en **le
 
 ## 6. Points à clarifier avant de coder
 
+- **Règle métier de l'échéance d'un EAD** (module 17) : campagne annuelle à date fixe, date anniversaire d'entrée, ou décision au cas par cas par RH/Manager ? Tant que ce n'est pas tranché, le champ reste manuel — voir module 17.
 - **La fiche collaborateur (module 1) existe-t-elle déjà dans la webapp d'onboarding ?** Si oui, quels champs exactement, et sous quel format/API — pour pré-remplir plutôt que ressaisir (voir note du module 1).
 - Le design system / bibliothèque de composants de la webapp d'onboarding existe déjà : à réutiliser pour tous les modules (boutons, champs, tableaux) plutôt qu'en créer un nouveau.
 - Comment l'authentification et les rôles (Collaborateur/Manager/RH) sont-ils déjà gérés dans l'app existante ? Le module EAD doit s'y brancher, pas créer son propre système.
@@ -315,3 +346,4 @@ Comportement : une fois les deux signatures posées, le formulaire passe en **le
 10. **Signatures & workflow** (module 16) : verrouillage du formulaire après double signature
 11. **Export PDF** de l'entretien rempli
 12. Backend : modèle de données et API CRUD pour l'entretien, **intégrés à la base et à l'authentification déjà existantes** de la webapp d'onboarding (pas de nouveau système d'auth), historique par année
+13. **Dashboard de suivi des EAD** (module 17) : nouvelle entrée de navigation, vue RH (tous) / vue Manager (son équipe), statuts, échéance en champ manuel pour l'instant

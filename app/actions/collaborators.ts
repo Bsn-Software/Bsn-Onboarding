@@ -14,6 +14,7 @@ export type CreateCollaboratorInput = {
   last_name: string
   email?: string
   job_title?: string
+  bu?: string
   entry_date?: string
   manager_id?: string
   is_headquarters?: boolean
@@ -78,6 +79,7 @@ export async function createCollaborator(input: CreateCollaboratorInput) {
       first_name: input.first_name,
       last_name: input.last_name,
       job_title: input.job_title || null,
+      bu: input.bu || null,
       manager_id: input.manager_id || null,
       is_headquarters: input.is_headquarters ?? false,
       role: 'collaborator',

@@ -26,9 +26,13 @@ export default async function Page() {
     email: profile?.email || user.email || '',
   }
 
+  // Collaborateurs → vue dédiée
+  // La détection manager se fait en interne dans CollaboratorView (getManagerTeam)
   if (profile?.role === 'collaborator') {
     return <CollaboratorView user={currentUser} />
   }
 
-  return <DashboardShell user={currentUser} />
+  // RH → dashboard complet
+  // isManagerOrHR = true pour les RH (toujours accès au dashboard EAD)
+  return <DashboardShell user={currentUser} isManagerOrHR={true} />
 }

@@ -41,6 +41,7 @@ export function NewCollaboratorModal({ onClose, onCreated }: Props) {
         last_name: fd.get('last_name') as string,
         email: fd.get('email') as string,
         job_title: fd.get('job_title') as string || undefined,
+        bu: fd.get('bu') as string || undefined,
         entry_date: fd.get('entry_date') as string || undefined,
         manager_id: fd.get('manager_id') as string || undefined,
         is_headquarters: fd.get('is_headquarters') === 'on',
@@ -198,6 +199,22 @@ export function NewCollaboratorModal({ onClose, onCreated }: Props) {
                     className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-[#00b2de] focus:bg-white focus:ring-2 focus:ring-[#00b2de]/20 cursor-pointer"
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* BU */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                Business Unit (BU)
+              </label>
+              <div className="relative">
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                <input
+                  name="bu"
+                  type="text"
+                  placeholder="ex: Digital, Industrie, Energy…"
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm text-slate-900 outline-none transition focus:border-[#00b2de] focus:bg-white focus:ring-2 focus:ring-[#00b2de]/20 placeholder:text-slate-400"
+                />
               </div>
             </div>
 

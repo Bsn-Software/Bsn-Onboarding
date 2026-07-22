@@ -8,9 +8,11 @@ import { STAFF_NAV } from "./nav-config"
 export function StaffSidebar({
   activeId,
   onSelect,
+  isManagerOrHR = true,
 }: {
   activeId: string
   onSelect: (id: string) => void
+  isManagerOrHR?: boolean
 }) {
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
@@ -21,7 +23,7 @@ export function StaffSidebar({
           Suivi
         </p>
         <ul className="flex flex-col gap-1">
-          {STAFF_NAV.map((item) => {
+          {STAFF_NAV.filter(item => item.id !== 'ead' || isManagerOrHR).map((item) => {
             const Icon = item.icon
             const isActive = item.id === activeId
             return (

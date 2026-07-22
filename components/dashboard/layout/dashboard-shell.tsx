@@ -13,9 +13,11 @@ import { SettingsView } from "../hr/settings-view"
 type ViewType = 'entrees' | 'sorties' | 'absences' | 'turnover' | 'ead' | 'parametres'
 
 export function DashboardShell({
-  user
+  user,
+  isManagerOrHR = true,
 }: {
   user: { name: string; role: string; email: string }
+  isManagerOrHR?: boolean
 }) {
   const [activeId, setActiveId] = useState<string>(STAFF_NAV[0].id)
   const [activeView, setActiveView] = useState<ViewType>('entrees')
@@ -37,7 +39,7 @@ export function DashboardShell({
       </div>
       <div className="flex flex-1 overflow-hidden print:overflow-visible">
         <div className="print:hidden">
-          <StaffSidebar activeId={activeId} onSelect={(id) => { setActiveId(id); setActiveView(id as ViewType); setSelectedCollaboratorId(null); }} />
+          <StaffSidebar activeId={activeId} isManagerOrHR={isManagerOrHR} onSelect={(id) => { setActiveId(id); setActiveView(id as ViewType); setSelectedCollaboratorId(null); }} />
         </div>
 
         {activeView !== 'parametres' && (
@@ -47,7 +49,7 @@ export function DashboardShell({
               aria-label="Navigation"
               className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-white px-3 py-2 md:hidden print:hidden"
             >
-              {STAFF_NAV.map((item) => {
+              {STAFF_NAV.filter(item => item.id !== 'ead' || isManagerOrHR).map((item) => {
                 const isActive = item.id === activeId
                 return (
                   <button

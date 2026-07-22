@@ -267,7 +267,7 @@ export async function getCollaborator(checklistId: string): Promise<Collaborator
     exit_date: row.exit_date,
     hr_notes: row.hr_notes,
     active_conditions: row.active_conditions ?? [],
-    collaborator: Array.isArray(row.collaborator) ? row.collaborator[0] : row.collaborator,
+    collaborator: (Array.isArray(row.collaborator) ? row.collaborator[0] : row.collaborator) as any,
     completions: row.completions ?? [],
     documents: uniqueDocs,
     total_items: totalItems,

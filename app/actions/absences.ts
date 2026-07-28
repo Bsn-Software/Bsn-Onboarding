@@ -326,8 +326,7 @@ export async function getAbsencesDashboard(): Promise<{
       declare_par, created_at,
       absences_documents(id, file_url, file_name, uploaded_at),
       collaborateur:profiles!absences_collaborateur_id_fkey(
-        id, first_name, last_name, email, job_title, manager_id,
-        manager:profiles!profiles_manager_id_fkey(first_name, last_name)
+        id, first_name, last_name, email, job_title, manager_id
       )
     `)
     .order('date_debut', { ascending: false })
@@ -339,9 +338,24 @@ export async function getAbsencesDashboard(): Promise<{
     return { rows: [], userRole: caller.isHR ? 'hr' : 'manager', error: error.message }
   }
 
+  // 2. Fetch managers manually because there is no foreign key self-relation for manager_id
+  const managerIds = [...new Set((data || []).map((item: any) => item.collaborateur?.manager_id).filter(Boolean))] as string[]
+  let managerMap = new Map<string, { first_name: string; last_name: string }>()
+  if (managerIds.length > 0) {
+    const { data: managersData } = await supabase
+      .from('profiles')
+      .select('id, first_name, last_name')
+      .in('id', managerIds)
+    if (managersData) {
+      managersData.forEach(m => {
+        managerMap.set(m.id, { first_name: m.first_name, last_name: m.last_name })
+      })
+    }
+  }
+
   const rows: AbsenceDashboardRow[] = (data || []).map((item: any) => {
     const collab = item.collaborateur
-    const mgr = collab?.manager
+    const mgr = collab?.manager_id ? managerMap.get(collab.manager_id) : null
     return {
       absence: {
         id: item.id,

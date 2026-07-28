@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { CollaboratorView } from "../collaborator/collaborator-view"
 import { CollaboratorDetailView } from "../hr/collaborator-detail-view"
 import { ContentArea } from "./content-area"
 import { NAV_LABELS, STAFF_NAV } from "./nav-config"
@@ -27,7 +26,6 @@ export function DashboardShell({
   
   const [activeId, setActiveId] = useState<string>(initialTab)
   const [activeView, setActiveView] = useState<ViewType>(initialTab as ViewType)
-  const [isCollaboratorView, setIsCollaboratorView] = useState(false)
   const [selectedCollaboratorId, setSelectedCollaboratorId] = useState<string | null>(null)
 
   // Mettre à jour l'URL (sans recharger) quand on change d'onglet
@@ -39,9 +37,7 @@ export function DashboardShell({
     router.replace(`/?tab=${id}`, { scroll: false })
   }
 
-  if (isCollaboratorView) {
-    return <CollaboratorView onBack={() => setIsCollaboratorView(false)} />
-  }
+
 
   return (
     <div className="flex h-svh flex-col overflow-hidden bg-slate-50 print:h-auto print:overflow-visible print:bg-white">
@@ -49,7 +45,6 @@ export function DashboardShell({
         <Topbar
           breadcrumb={NAV_LABELS[activeId]}
           user={user}
-          onSwitchToCollaborator={() => setIsCollaboratorView(true)}
         />
       </div>
       <div className="flex flex-1 overflow-hidden print:overflow-visible">

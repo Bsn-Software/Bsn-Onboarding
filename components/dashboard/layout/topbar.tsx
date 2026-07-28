@@ -14,11 +14,9 @@ type CurrentUser = {
 export function Topbar({
   breadcrumb,
   user,
-  onSwitchToCollaborator,
 }: {
   breadcrumb: string
   user: CurrentUser
-  onSwitchToCollaborator: () => void
 }) {
   return (
     <header className="flex h-22 shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-[#00b2de] px-4 sm:px-6">
@@ -50,14 +48,7 @@ export function Topbar({
 
       {/* Right actions */}
       <div className="flex items-center gap-2 sm:gap-3">
-        <button
-          type="button"
-          onClick={onSwitchToCollaborator}
-          className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-white transition-colors outline-none hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white"
-        >
-          <Eye className="size-4" />
-          <span className="hidden md:inline">Vue collaborateur</span>
-        </button>
+
         <div className="h-6 w-px bg-white/20" aria-hidden="true" />
         <UserDropdown user={user} />
       </div>

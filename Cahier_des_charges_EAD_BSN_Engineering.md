@@ -258,7 +258,7 @@ Le formulaire (modules 1-16) est l'EAD **d'un** collaborateur. Ce module est la 
 | Manager | affichage | masqué en vue Manager, utile en vue RH |
 | Statut EAD année en cours | badge calculé | Non commencé / Brouillon / En attente signature Manager / En attente signature Collaborateur / Terminé |
 | Date du dernier EAD réalisé | `date` (lecture seule) | avec lien vers l'EAD archivé |
-| Échéance | `date` éditable manuellement | **pas de calcul automatique pour l'instant — la règle métier n'est pas encore définie (voir section 6)** |
+| Date & heure prévue | `datetime` éditable | **remplace l'ancien champ "Échéance"** — voir module 18, c'est maintenant une vraie planification qui déclenche des emails, pas juste une date indicative |
 | Action rapide | bouton contextuel | "Créer l'EAD" / "Reprendre" / "Consulter" selon le statut |
 
 Filtres : par statut, par BU, par Manager (vue RH), par année. Compteurs synthétiques en haut de page (non commencés / en cours / terminés).
@@ -269,11 +269,51 @@ Filtres : par statut, par BU, par Manager (vue RH), par année. Compteurs synth�
     "collaborateur_id": "",
     "statut_annee_courante": "non_commence | brouillon | attente_signature_manager | attente_signature_collaborateur | termine",
     "date_dernier_ead": null,
-    "date_echeance": null,
+    "date_heure_prevue": null,
     "entretien_id_courant": null
   }
 ]
 ```
+
+### Module 18 — Planification & notifications EAD
+
+*(ajouté après coup — remplace et enrichit l'ancien champ "Échéance" du module 17)*
+
+Au lieu d'une date indicative sans effet, RH/Manager fixent une **date et heure précises** pour l'entretien. Cette action déclenche automatiquement des emails au collaborateur.
+
+**Qui peut planifier** : RH et Manager (cohérent avec qui a le droit de créer un EAD, déjà décidé). Édition du champ "Date & heure prévue" dans le dashboard (module 17) et/ou depuis la fiche de l'entretien.
+
+**Emails déclenchés :**
+
+| Déclencheur | Destinataire | Quand |
+|---|---|---|
+| Confirmation | Collaborateur | Immédiatement quand la date/heure est définie ou modifiée |
+| Rappel J-7 | Collaborateur | 7 jours avant, si l'entretien n'est pas encore terminé |
+| Rappel J-1 | Collaborateur | La veille, si l'entretien n'est pas encore terminé |
+
+Si l'entretien est replanifié (date changée), un nouvel email de confirmation part, et les rappels se recalculent sur la nouvelle date. Si l'entretien passe au statut "Terminé" avant l'échéance des rappels, ceux-ci ne sont plus envoyés.
+
+**Modèle de données :**
+
+```json
+// ead_entretiens
+{ "date_heure_prevue": null }  // TIMESTAMPTZ, remplace l'ancien date_echeance (DATE)
+
+// nouvelle table ead_notifications — un log pour ne jamais envoyer deux fois le même email
+{
+  "entretien_id": "",
+  "type": "confirmation | rappel_j7 | rappel_j1",
+  "date_cible": null,     // valeur de date_heure_prevue au moment de l'envoi — permet de gérer les replanifications sans confusion
+  "envoye_le": null,
+  "destinataire_email": ""
+}
+```
+
+**Vue Collaborateur** (section "Mes Entretiens EAD" de son profil), à ajouter :
+- Si un entretien a une `date_heure_prevue` future et n'est pas terminé : *"Prochain entretien : [date] à [heure]"*.
+- Le dernier entretien terminé (le plus récent avec statut "Terminé"), s'il y en a un : *"Dernier entretien réalisé le : [date]"*.
+
+**Non traité pour l'instant (à ouvrir plus tard si besoin)** : copie de l'email au Manager, rappel supplémentaire après la date si l'entretien n'a toujours pas été fait (no-show).
 
 ---
 
@@ -318,7 +358,7 @@ Filtres : par statut, par BU, par Manager (vue RH), par année. Compteurs synth�
 
 ## 6. Points à clarifier avant de coder
 
-- **Règle métier de l'échéance d'un EAD** (module 17) : campagne annuelle à date fixe, date anniversaire d'entrée, ou décision au cas par cas par RH/Manager ? Tant que ce n'est pas tranché, le champ reste manuel — voir module 17.
+- ~~Règle métier de l'échéance d'un EAD~~ **Résolu** : remplacé par une vraie planification date+heure (module 18) qui déclenche des emails, plutôt qu'une règle automatique de date limite.
 - **La fiche collaborateur (module 1) existe-t-elle déjà dans la webapp d'onboarding ?** Si oui, quels champs exactement, et sous quel format/API — pour pré-remplir plutôt que ressaisir (voir note du module 1).
 - Le design system / bibliothèque de composants de la webapp d'onboarding existe déjà : à réutiliser pour tous les modules (boutons, champs, tableaux) plutôt qu'en créer un nouveau.
 - Comment l'authentification et les rôles (Collaborateur/Manager/RH) sont-ils déjà gérés dans l'app existante ? Le module EAD doit s'y brancher, pas créer son propre système.
@@ -347,3 +387,4 @@ Filtres : par statut, par BU, par Manager (vue RH), par année. Compteurs synth�
 11. **Export PDF** de l'entretien rempli
 12. Backend : modèle de données et API CRUD pour l'entretien, **intégrés à la base et à l'authentification déjà existantes** de la webapp d'onboarding (pas de nouveau système d'auth), historique par année
 13. **Dashboard de suivi des EAD** (module 17) : nouvelle entrée de navigation, vue RH (tous) / vue Manager (son équipe), statuts, échéance en champ manuel pour l'instant
+14. **Planification & notifications** (module 18) : date+heure prévue, email de confirmation, 2 rappels automatiques (J-7, J-1), affichage prochain/dernier entretien côté collaborateur

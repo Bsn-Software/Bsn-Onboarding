@@ -19,7 +19,7 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getEadDashboard, createEntretien, updateDateEcheance, type DashboardRow } from '@/app/actions/ead'
+import { getEadDashboard, createEntretien, updateDateHeurePrevue, type DashboardRow } from '@/app/actions/ead'
 import { InitialsAvatar } from '@/components/dashboard/shared/initials-avatar'
 import { DatePicker } from '@/components/ui/date-picker'
 import { toast } from 'sonner'
@@ -196,14 +196,14 @@ export function EadDashboard() {
 
   const handleEcheanceChange = async (entretienId: string, dateStr: string) => {
     setUpdatingEcheance(entretienId)
-    const res = await updateDateEcheance(entretienId, dateStr || null)
+    const res = await updateDateHeurePrevue(entretienId, dateStr || null)
     if (res.error) {
       toast.error(res.error)
     } else {
       // Mise à jour optimiste
       setRows(prev => prev.map(r =>
         r.entretien?.id === entretienId
-          ? { ...r, entretien: { ...r.entretien!, date_echeance: dateStr || null } }
+          ? { ...r, entretien: { ...r.entretien!, date_heure_prevue: dateStr || null } }
           : r
       ))
     }
@@ -384,8 +384,10 @@ export function EadDashboard() {
                   const fullName = [row.profile.first_name, row.profile.last_name].filter(Boolean).join(' ') || row.profile.email
                   const managerName = [row.profile.manager_first_name, row.profile.manager_last_name].filter(Boolean).join(' ')
                   const updatedAt = row.entretien ? new Date(row.entretien.updated_at).toLocaleDateString('fr-FR') : null
-                  const echeanceStr = row.entretien?.date_echeance ?? undefined
-                  const echeanceDisplay = echeanceStr ? new Date(echeanceStr).toLocaleDateString('fr-FR') : null
+                  const echeanceStr = row.entretien?.date_heure_prevue ?? undefined
+                  const echeanceDisplay = echeanceStr
+                    ? new Date(echeanceStr).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+                    : null
                   const isUpdatingThis = updatingEcheance === row.entretien?.id
                   const isCreatingThis = creatingFor === row.profile.id
 
@@ -436,14 +438,14 @@ export function EadDashboard() {
                         <span className="text-sm text-slate-500">{updatedAt ?? <span className="text-slate-300">—</span>}</span>
                       </td>
 
-                      {/* Échéance */}
+                      {/* Date planifiée */}
                       <td className="px-4 py-3">
                         {row.entretien ? (
-                          userRole === 'hr' ? (
+                          (userRole === 'hr' || userRole === 'manager') ? (
                             <div className="flex items-center gap-1">
                               {isUpdatingThis && <Loader2 className="size-3 animate-spin text-[#00b2de]" />}
                             <DatePicker
-                                date={row.entretien?.date_echeance ?? undefined}
+                                date={row.entretien?.date_heure_prevue ?? undefined}
                                 setDate={(dateStr) => handleEcheanceChange(row.entretien!.id, dateStr)}
                                 disabled={isUpdatingThis}
                               />

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/ead-rappels",
+      "schedule": "0 7 * * *"
+    }
+  ]
+}

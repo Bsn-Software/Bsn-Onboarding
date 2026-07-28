@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import {
   CheckCircle2,
+  CheckCircle,
   Clock,
   FileText,
   UploadCloud,
@@ -27,7 +28,7 @@ import {
   recordDocumentUpload, 
   type DocumentStatus 
 } from '@/app/actions/documents'
-import { getEntretiensByCollaborator, getManagerTeam, createEntretien } from '@/app/actions/ead'
+import { getEntretiensByCollaborator, getManagerTeam, createEntretien, getCollaboratorEadSummary } from '@/app/actions/ead'
 import { EadView } from '../ead/ead-view'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -61,6 +62,10 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
   const [team, setTeam] = useState<any[]>([])
   const [teamEads, setTeamEads] = useState<Record<string, any[]>>({})
   const [selectedEadId, setSelectedEadId] = useState<string | null>(null)
+  const [eadSummary, setEadSummary] = useState<{
+    prochainEntretien: { id: string; date_heure_prevue: string } | null
+    dernierEntretienSigne: { id: string; updated_at: string } | null
+  }>({ prochainEntretien: null, dernierEntretienSigne: null })
 
   const loadData = async () => {
     setLoading(true)
@@ -76,6 +81,13 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
         // Charger mes EAD
         const eadRes = await getEntretiensByCollaborator(user.id)
         if (eadRes.data) setMyEads(eadRes.data)
+
+        // Charger le résumé EAD (prochain entretien planifié, dernier signé)
+        const summaryRes = await getCollaboratorEadSummary()
+        setEadSummary({
+          prochainEntretien: summaryRes.prochainEntretien as any,
+          dernierEntretienSigne: summaryRes.dernierEntretienSigne as any,
+        })
 
         // Charger mon équipe si je suis manager
         const teamRes = await getManagerTeam()
@@ -492,10 +504,46 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
 
             {activeTab === 'mes_ead' && (
               <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="rounded-xl border border-[#00b2de]/20 bg-[#00b2de]/5 p-5 mb-4">
+              <div className="rounded-xl border border-[#00b2de]/20 bg-[#00b2de]/5 p-5 mb-4">
                   <h3 className="font-semibold text-slate-900">Mes Entretiens Annuels</h3>
                   <p className="text-sm text-slate-600 mt-1">Retrouvez ici l'historique de vos EAD. Vous pourrez les remplir une fois initialisés par votre manager ou les RH.</p>
                 </div>
+
+                {/* Bloc résumé : prochain entretien + dernier signé */}
+                {(eadSummary.prochainEntretien || eadSummary.dernierEntretienSigne) && (
+                  <div className="grid gap-3 sm:grid-cols-2 mb-2">
+                    {eadSummary.prochainEntretien && (
+                      <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50/60 p-4">
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                          <Calendar className="size-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-blue-600 mb-0.5">Prochain entretien</p>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {new Date(eadSummary.prochainEntretien.date_heure_prevue).toLocaleString('fr-FR', {
+                              weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {eadSummary.dernierEntretienSigne && (
+                      <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+                          <CheckCircle className="size-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600 mb-0.5">Dernier entretien réalisé</p>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {new Date(eadSummary.dernierEntretienSigne.updated_at).toLocaleDateString('fr-FR', {
+                              day: 'numeric', month: 'long', year: 'numeric'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 {myEads.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-slate-200 rounded-xl bg-white">

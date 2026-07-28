@@ -1,7 +1,12 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { Resend } from 'resend'
+import { getEadConfirmationEmailHtml, getEadRappelEmailHtml } from '@/lib/email-templates'
+
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 /**
  * Récupère tous les entretiens EAD d'un collaborateur donné
@@ -294,7 +299,7 @@ export type DashboardRow = {
     id: string
     statut: string
     updated_at: string
-    date_echeance: string | null
+    date_heure_prevue: string | null
   } | null
 }
 
@@ -390,7 +395,7 @@ export async function getEadDashboard(): Promise<DashboardResult> {
 
   const { data: entretiens, error: entsError } = await supabase
     .from('ead_entretiens')
-    .select('id, collaborator_id, statut, updated_at, date_echeance')
+    .select('id, collaborator_id, statut, updated_at, date_heure_prevue')
     .in('collaborator_id', collaboratorIds)
     .eq('annee', currentYear)
 
@@ -423,39 +428,179 @@ export async function getEadDashboard(): Promise<DashboardResult> {
   return { rows, userRole: isHR ? 'hr' : 'manager' }
 }
 
+// ─────────────────────────────────────────────────────────────
+// Interne — Envoie un email EAD et log dans ead_notifications
+// Utilise adminClient (service role) pour bypasser la RLS de la table de log
+// ─────────────────────────────────────────────────────────────
+async function sendEadNotification(
+  entretienId: string,
+  type: 'confirmation' | 'rappel_j7' | 'rappel_j1',
+  dateHeurePrevue: Date,
+) {
+  const admin = createAdminClient()
+
+  // Récupérer le collaborateur
+  const { data: entretien } = await admin
+    .from('ead_entretiens')
+    .select('collaborator_id')
+    .eq('id', entretienId)
+    .single()
+
+  if (!entretien) return
+
+  const { data: profile } = await admin
+    .from('profiles')
+    .select('first_name, email')
+    .eq('id', entretien.collaborator_id)
+    .single()
+
+  if (!profile?.email) return
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://bsn-onboarding.vercel.app'
+  const lienEad = `${appUrl}/ead/${entretienId}`
+  const firstName = profile.first_name || 'Collaborateur'
+
+  let html: string
+  if (type === 'confirmation') {
+    html = getEadConfirmationEmailHtml(firstName, dateHeurePrevue, lienEad)
+  } else {
+    const jours = type === 'rappel_j1' ? 1 : 7
+    html = getEadRappelEmailHtml(firstName, dateHeurePrevue, jours, lienEad)
+  }
+
+  const subjectMap = {
+    confirmation: 'BSN Engineering — Votre EAD a été planifié',
+    rappel_j7: 'BSN Engineering — Rappel : votre EAD dans 7 jours',
+    rappel_j1: 'BSN Engineering — Rappel : votre EAD demain',
+  }
+
+  try {
+    await resend.emails.send({
+      from: 'BSN Engineering <satisfaction@bsnengineering.com>',
+      to: [profile.email],
+      subject: subjectMap[type],
+      html,
+    })
+  } catch (err) {
+    console.error(`Erreur Resend (${type}):`, err)
+    // On log quand même pour ne pas perdre la traçabilité
+  }
+
+  // Log dans ead_notifications via admin (service role — bypass RLS)
+  await admin.from('ead_notifications').insert({
+    entretien_id: entretienId,
+    type,
+    date_cible: dateHeurePrevue.toISOString().split('T')[0], // date seule, clé de dédup
+    destinataire_email: profile.email,
+  })
+}
+
 /**
- * Met à jour la date d'échéance d'un entretien.
- * Réservé aux RH — vérification côté serveur avant tout UPDATE.
- * La RLS Manager permet le UPDATE général, mais pas cette colonne spécifiquement
- * sans ce garde-fou applicatif.
+ * Met à jour la date/heure prévue d'un entretien.
+ * Accessible aux RH et au Manager direct du collaborateur.
+ * Envoie un email de confirmation uniquement si la date a réellement changé.
  */
-export async function updateDateEcheance(entretienId: string, date: string | null) {
-  const supabase = await createClient() // Client authentifié — RLS active
+export async function updateDateHeurePrevue(entretienId: string, dateHeurePrevue: string | null) {
+  const supabase = await createClient()
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) return { error: 'Non authentifié' }
 
-  // Vérification serveur : seuls les RH peuvent modifier date_echeance
-  const { data: profile } = await supabase
+  // 1. Récupérer l'entretien courant (date actuelle + collaborator_id)
+  const { data: entretien, error: fetchErr } = await supabase
+    .from('ead_entretiens')
+    .select('date_heure_prevue, collaborator_id')
+    .eq('id', entretienId)
+    .single()
+
+  if (fetchErr || !entretien) return { error: 'Entretien introuvable.' }
+
+  // 2. Vérification rôle stricte
+  const { data: callerProfile } = await supabase
     .from('profiles')
     .select('role')
     .eq('id', user.id)
     .single()
 
-  if (profile?.role !== 'hr') {
-    return { error: "Seul un RH peut modifier l'échéance." }
+  const isHR = callerProfile?.role === 'hr'
+
+  if (!isHR) {
+    // Vérifier que l'appelant est le manager_id du collaborateur LIÉ À CET ENTRETIEN PRÉCIS
+    const { data: targetProfile } = await supabase
+      .from('profiles')
+      .select('manager_id')
+      .eq('id', entretien.collaborator_id)
+      .single()
+
+    if (targetProfile?.manager_id !== user.id) {
+      return { error: 'Accès refusé.' }
+    }
   }
 
+  // 3. Détecter si la date a réellement changé
+  const ancienneDate = entretien.date_heure_prevue
+    ? new Date(entretien.date_heure_prevue).toISOString()
+    : null
+  const nouvelleDate = dateHeurePrevue
+    ? new Date(dateHeurePrevue).toISOString()
+    : null
+  const dateChanged = ancienneDate !== nouvelleDate
+
+  // 4. UPDATE
   const { error } = await supabase
     .from('ead_entretiens')
-    .update({ date_echeance: date })
+    .update({ date_heure_prevue: dateHeurePrevue })
     .eq('id', entretienId)
 
   if (error) {
-    console.error('Erreur updateDateEcheance:', error)
+    console.error('Erreur updateDateHeurePrevue:', error)
     return { error: 'Erreur lors de la mise à jour.' }
+  }
+
+  // 5. Email + log uniquement si la date a changé et est non-nulle
+  if (dateChanged && dateHeurePrevue) {
+    // Fire-and-forget — on ne bloque pas la réponse sur l'email
+    sendEadNotification(entretienId, 'confirmation', new Date(dateHeurePrevue)).catch(
+      err => console.error('Erreur sendEadNotification:', err)
+    )
   }
 
   revalidatePath('/')
   return { success: true }
+}
+
+/**
+ * Récupère le résumé EAD d'un collaborateur connecté.
+ * Utilisé dans la vue Collaborateur.
+ * RLS garantit que chaque utilisateur ne voit que ses propres entretiens.
+ */
+export async function getCollaboratorEadSummary() {
+  const supabase = await createClient()
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) return { prochainEntretien: null, dernierEntretienSigne: null }
+
+  const { data: entretiens } = await supabase
+    .from('ead_entretiens')
+    .select('id, statut, date_heure_prevue, updated_at')
+    .eq('collaborator_id', user.id)
+    .order('annee', { ascending: false })
+
+  if (!entretiens || entretiens.length === 0) {
+    return { prochainEntretien: null, dernierEntretienSigne: null }
+  }
+
+  const now = new Date()
+
+  // Prochain entretien : date_heure_prevue dans le futur, statut != signe
+  const prochainEntretien = entretiens
+    .filter(e => e.statut !== 'signe' && e.date_heure_prevue && new Date(e.date_heure_prevue) > now)
+    .sort((a, b) => new Date(a.date_heure_prevue!).getTime() - new Date(b.date_heure_prevue!).getTime())[0] ?? null
+
+  // Dernier entretien signé : le plus récent avec statut == signe
+  const dernierEntretienSigne = entretiens
+    .filter(e => e.statut === 'signe')
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0] ?? null
+
+  return { prochainEntretien, dernierEntretienSigne }
 }

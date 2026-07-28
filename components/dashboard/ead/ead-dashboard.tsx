@@ -184,7 +184,11 @@ export function EadDashboard() {
     if (res.error) {
       toast.error(res.error)
     } else {
-      toast.success('Entretien créé')
+      if ((res as any).alreadyExisted) {
+        toast.info('Un entretien existe déjà pour cette année — ouverture en cours.')
+      } else {
+        toast.success('Entretien créé')
+      }
       router.push(`/ead/${res.id}`)
     }
     setCreatingFor(null)
@@ -206,8 +210,36 @@ export function EadDashboard() {
           ? { ...r, entretien: { ...r.entretien!, date_heure_prevue: dateStr || null } }
           : r
       ))
+      if (dateStr) {
+        toast.success('Date planifiée. Un email de confirmation a été envoyé au collaborateur.')
+      }
     }
     setUpdatingEcheance(null)
+  }
+
+  const handleCreateAndSchedule = async (profileId: string, dateStr: string) => {
+    if (!dateStr) return
+    setCreatingFor(profileId)
+    
+    // 1. Créer l'entretien
+    const createRes = await createEntretien(profileId, currentYear)
+    if (createRes.error) {
+      toast.error(createRes.error)
+      setCreatingFor(null)
+      return
+    }
+
+    // 2. Planifier la date
+    const res = await updateDateHeurePrevue(createRes.id, dateStr)
+    if (res.error) {
+      toast.error(res.error)
+    } else {
+      toast.success('EAD créé et planifié. Un email a été envoyé.')
+      // Rafraîchir les données
+      const refresh = await getEadDashboard()
+      if (refresh.rows) setRows(refresh.rows)
+    }
+    setCreatingFor(null)
   }
 
   // ─── Chargement ───────────────────────────────────────────
@@ -373,7 +405,7 @@ export function EadDashboard() {
                   <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">BU</th>
                   <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Statut EAD {currentYear}</th>
                   <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Mis à jour</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Échéance</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Date planifiée</th>
                   <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Action</th>
                 </tr>
               </thead>
@@ -440,23 +472,25 @@ export function EadDashboard() {
 
                       {/* Date planifiée */}
                       <td className="px-4 py-3">
-                        {row.entretien ? (
-                          (userRole === 'hr' || userRole === 'manager') ? (
-                            <div className="flex items-center gap-1">
-                              {isUpdatingThis && <Loader2 className="size-3 animate-spin text-[#00b2de]" />}
+                        {(userRole === 'hr' || userRole === 'manager') ? (
+                          <div className="flex items-center gap-1">
+                            {isUpdatingThis && <Loader2 className="size-3 animate-spin text-[#00b2de]" />}
                             <DatePicker
-                                date={row.entretien?.date_heure_prevue ?? undefined}
-                                setDate={(dateStr) => handleEcheanceChange(row.entretien!.id, dateStr)}
-                                disabled={isUpdatingThis}
-                              />
-                            </div>
-                          ) : (
-                            <span className="text-sm text-slate-500">
-                              {echeanceDisplay ?? <span className="text-slate-300">—</span>}
-                            </span>
-                          )
+                              date={row.entretien?.date_heure_prevue ?? undefined}
+                              setDate={(dateStr) => {
+                                if (row.entretien) {
+                                  handleEcheanceChange(row.entretien.id, dateStr)
+                                } else {
+                                  handleCreateAndSchedule(row.profile.id, dateStr)
+                                }
+                              }}
+                              disabled={isUpdatingThis || isCreatingThis}
+                            />
+                          </div>
                         ) : (
-                          <span className="text-slate-300 text-sm">—</span>
+                          <span className="text-sm text-slate-500">
+                            {echeanceDisplay ?? <span className="text-slate-300">—</span>}
+                          </span>
                         )}
                       </td>
 
@@ -465,11 +499,11 @@ export function EadDashboard() {
                         {statut === 'non_commence' ? (
                           <button
                             onClick={() => handleCreate(row)}
-                            disabled={!!isCreatingThis}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-[#00b2de] px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-[#0096c7] transition-colors disabled:opacity-60"
+                            disabled={isCreatingThis}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-200 transition-colors disabled:opacity-60"
                           >
-                            {isCreatingThis ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />}
-                            Créer l'EAD
+                            {isCreatingThis ? <Loader2 className="size-3 animate-spin" /> : <PenLine className="size-3" />}
+                            Initialiser
                           </button>
                         ) : statut === 'signe' ? (
                           <button

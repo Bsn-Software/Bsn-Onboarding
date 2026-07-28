@@ -117,7 +117,22 @@ export async function createEntretien(collaboratorId: string, annee: number) {
     }
   }
 
-  // 3. Insérer l'entretien (RLS confirme en second filet)
+  // 3. Vérifier si un entretien existe déjà pour ce collaborateur+année
+  //    La contrainte UNIQUE (collaborator_id, annee) empêche les doublons en base.
+  //    On le gère applicativement pour ouvrir l'existant plutôt que d'afficher une erreur.
+  const { data: existing } = await supabase
+    .from('ead_entretiens')
+    .select('id')
+    .eq('collaborator_id', collaboratorId)
+    .eq('annee', annee)
+    .maybeSingle()
+
+  if (existing) {
+    // L'entretien existe déjà — on ouvre l'existant, pas d'erreur
+    return { id: existing.id, alreadyExisted: true }
+  }
+
+  // 4. Insérer l'entretien (RLS confirme en second filet)
   const { data, error } = await supabase
     .from('ead_entretiens')
     .insert({
@@ -130,7 +145,7 @@ export async function createEntretien(collaboratorId: string, annee: number) {
 
   if (error) {
     console.error('Erreur createEntretien:', error)
-    return { error: "Vous n'avez pas les droits pour créer cet entretien ou il existe déjà." }
+    return { error: "Vous n'avez pas les droits pour créer cet entretien." }
   }
 
   revalidatePath('/')

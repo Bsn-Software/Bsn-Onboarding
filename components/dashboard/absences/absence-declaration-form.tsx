@@ -10,11 +10,13 @@ import { createClient } from '@/lib/supabase/client'
 import {
   createAbsence,
   recordCertificatUpload,
+} from '@/app/actions/absences'
+import {
   type AbsenceType,
   type NiveauRisque,
   ABSENCE_TYPE_LABELS,
   NIVEAU_RISQUE_LABELS,
-} from '@/app/actions/absences'
+} from '@/lib/absences-config'
 import { toast } from 'sonner'
 
 // ─────────────────────────────────────────────────────────────

@@ -29,7 +29,8 @@ import {
   type DocumentStatus 
 } from '@/app/actions/documents'
 import { getEntretiensByCollaborator, getManagerTeam, createEntretien, getCollaboratorEadSummary } from '@/app/actions/ead'
-import { getMyAbsences, type Absence, ABSENCE_TYPE_LABELS, NIVEAU_RISQUE_LABELS } from '@/app/actions/absences'
+import { getMyAbsences } from '@/app/actions/absences'
+import { type Absence, ABSENCE_TYPE_LABELS, NIVEAU_RISQUE_LABELS } from '@/lib/absences-config'
 import { EadView } from '../ead/ead-view'
 import { AbsenceDeclarationForm } from '../absences/absence-declaration-form'
 import { useRouter } from 'next/navigation'

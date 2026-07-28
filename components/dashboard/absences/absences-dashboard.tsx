@@ -19,11 +19,13 @@ import { cn } from '@/lib/utils'
 import {
   getAbsencesDashboard,
   cloturerAbsence,
+} from '@/app/actions/absences'
+import {
   type AbsenceDashboardRow,
   type NiveauRisque,
   ABSENCE_TYPE_LABELS,
   NIVEAU_RISQUE_LABELS,
-} from '@/app/actions/absences'
+} from '@/lib/absences-config'
 import { InitialsAvatar } from '@/components/dashboard/shared/initials-avatar'
 import { toast } from 'sonner'
 

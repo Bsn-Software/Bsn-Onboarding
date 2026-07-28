@@ -29,7 +29,9 @@ import { sendInvitation } from '@/app/actions/collaborators'
 import { TimelineSCurve } from './timeline-s-curve'
 import { toast } from 'sonner'
 import { getEntretiensByCollaborator, createEntretien } from '@/app/actions/ead'
+import { getAbsencesByCollaborateur, type Absence, ABSENCE_TYPE_LABELS } from '@/app/actions/absences'
 import { EadView } from '../ead/ead-view'
+import { AbsenceDeclarationForm } from '../absences/absence-declaration-form'
 
 export function CollaboratorDetailView({
   checklistId,
@@ -46,10 +48,15 @@ export function CollaboratorDetailView({
   const [showOffboardModal, setShowOffboardModal] = useState(false)
   const [exitDate, setExitDate] = useState(new Date().toISOString().split('T')[0])
   
-  const [activeTab, setActiveTab] = useState<'timeline' | 'ead'>('timeline')
+  const [activeTab, setActiveTab] = useState<'timeline' | 'ead' | 'absences'>('timeline')
   const [eadList, setEadList] = useState<any[]>([])
   const [loadingEad, setLoadingEad] = useState(false)
   const [selectedEadId, setSelectedEadId] = useState<string | null>(null)
+
+  // Absences
+  const [absenceList, setAbsenceList] = useState<Absence[]>([])
+  const [loadingAbsences, setLoadingAbsences] = useState(false)
+  const [showAbsenceForm, setShowAbsenceForm] = useState(false)
 
   const handleInitiateOffboarding = () => {
     setShowOffboardModal(true)
@@ -98,6 +105,9 @@ export function CollaboratorDetailView({
     if (data?.collaborator?.id && activeTab === 'ead') {
       loadEadList(data.collaborator.id)
     }
+    if (data?.collaborator?.id && activeTab === 'absences') {
+      loadAbsenceList(data.collaborator.id)
+    }
   }, [activeTab, data])
 
   const handleCreateEad = async () => {
@@ -110,6 +120,13 @@ export function CollaboratorDetailView({
       loadEadList(data.collaborator.id)
       setSelectedEadId(res.id)
     }
+  }
+
+  const loadAbsenceList = async (collaborateurId: string) => {
+    setLoadingAbsences(true)
+    const res = await getAbsencesByCollaborateur(collaborateurId)
+    if (res.absences) setAbsenceList(res.absences)
+    setLoadingAbsences(false)
   }
 
   const handleToggle = async (itemId: string, currentDone: boolean) => {
@@ -267,6 +284,24 @@ export function CollaboratorDetailView({
             <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#00b2de] rounded-t-full" />
           )}
         </button>
+
+        <button
+          onClick={() => setActiveTab('absences')}
+          className={cn(
+            "pb-3 text-sm font-medium transition-colors relative",
+            activeTab === 'absences' ? "text-[#00b2de]" : "text-slate-500 hover:text-slate-800"
+          )}
+        >
+          Absences
+          {absenceList.filter(a => !a.date_fin_reelle).length > 0 && (
+            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700">
+              {absenceList.filter(a => !a.date_fin_reelle).length}
+            </span>
+          )}
+          {activeTab === 'absences' && (
+            <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#00b2de] rounded-t-full" />
+          )}
+        </button>
       </div>
 
       {activeTab === 'timeline' && (
@@ -339,6 +374,73 @@ export function CollaboratorDetailView({
         </div>
       )}
 
+      {activeTab === 'absences' && (
+        <div className="flex-1 flex flex-col pt-6 overflow-y-auto scrollbar-hide">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-semibold text-slate-900">Absences</h2>
+            <button
+              onClick={() => setShowAbsenceForm(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#00b2de] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#0096c7] transition-colors"
+            >
+              + Déclarer une absence
+            </button>
+          </div>
+
+          {loadingAbsences ? (
+            <div className="flex items-center justify-center p-12">
+              <Loader2 className="size-6 animate-spin text-slate-300" />
+            </div>
+          ) : absenceList.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50">
+              <p className="text-sm font-medium text-slate-900">Aucune absence enregistrée</p>
+              <p className="text-xs text-slate-500 mt-1">Les absences de ce collaborateur apparaîtront ici.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {absenceList.map((absence) => (
+                <div key={absence.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-3">
+                      <span className={cn(
+                        'inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-semibold',
+                        absence.type === 'accident_travail' ? 'bg-red-100 text-red-700' :
+                        absence.type === 'maladie' ? 'bg-amber-100 text-amber-700' :
+                        'bg-slate-100 text-slate-700'
+                      )}>
+                        {ABSENCE_TYPE_LABELS[absence.type]}
+                      </span>
+                      <span className={cn(
+                        'text-xs font-medium',
+                        !absence.date_fin_reelle ? 'text-amber-600' : 'text-slate-400'
+                      )}>
+                        {!absence.date_fin_reelle ? '● En cours' : '✓ Terminée'}
+                      </span>
+                    </div>
+                    {absence.absences_documents.length > 0 ? (
+                      <span className="text-xs text-emerald-600 font-medium">✓ Certificat fourni</span>
+                    ) : (
+                      <span className="text-xs text-amber-600 font-medium">⚠ Certificat manquant</span>
+                    )}
+                  </div>
+                  <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
+                    <span>Du <strong className="text-slate-700">{new Date(absence.date_debut).toLocaleDateString('fr-FR')}</strong></span>
+                    {absence.date_fin_prevue && (
+                      <span>au <strong className="text-slate-700">{new Date(absence.date_fin_prevue).toLocaleDateString('fr-FR')}</strong> (prévu)</span>
+                    )}
+                    {absence.date_fin_reelle && (
+                      <span>Clôturée le <strong className="text-slate-700">{new Date(absence.date_fin_reelle).toLocaleDateString('fr-FR')}</strong></span>
+                    )}
+                  </div>
+                  {absence.mission_ou_client_concerne && (
+                    <p className="mt-1.5 text-xs text-slate-500">Mission : {absence.mission_ou_client_concerne}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Modal Date de départ */}
       {showOffboardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
@@ -383,6 +485,18 @@ export function CollaboratorDetailView({
             </div>
           </div>
         </div>
+      )}
+
+      {showAbsenceForm && data?.collaborator?.id && (
+        <AbsenceDeclarationForm
+          collaborateurId={data.collaborator.id}
+          collaborateurNom={[data.collaborator.first_name, data.collaborator.last_name].filter(Boolean).join(' ')}
+          onSuccess={() => {
+            setShowAbsenceForm(false)
+            loadAbsenceList(data.collaborator.id)
+          }}
+          onClose={() => setShowAbsenceForm(false)}
+        />
       )}
     </div>
   )

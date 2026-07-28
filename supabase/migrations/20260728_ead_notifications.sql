@@ -27,7 +27,7 @@ CREATE TABLE public.ead_notifications (
 
 -- Index pour les lookups de déduplication (utilisés par le cron)
 CREATE INDEX idx_ead_notif_entretien ON public.ead_notifications(entretien_id);
-CREATE INDEX idx_ead_notif_dedup     ON public.ead_notifications(entretien_id, type, date_cible);
+CREATE INDEX idx_ead_notif_dedup ON public.ead_notifications(entretien_id, type, date_cible);
 
 -- RLS : activée, mais INSERT uniquement via service_role (Server Actions)
 ALTER TABLE public.ead_notifications ENABLE ROW LEVEL SECURITY;
@@ -40,7 +40,7 @@ CREATE POLICY "EAD notifications - RH lecture"
       SELECT 1 FROM public.profiles
       WHERE id = auth.uid() AND role = 'hr'
     )
-  );
+);
 
 -- Le service_role (utilisé par les Server Actions) bypass la RLS automatiquement
 GRANT ALL ON public.ead_notifications TO service_role;

@@ -528,7 +528,10 @@ export async function updateDateHeurePrevue(entretienId: string, dateHeurePrevue
     .eq('id', entretienId)
     .single()
 
-  if (fetchErr || !entretien) return { error: 'Entretien introuvable.' }
+  if (fetchErr || !entretien) {
+    console.error('Erreur fetch updateDateHeurePrevue:', fetchErr, 'id:', entretienId)
+    return { error: `Entretien introuvable. Détail: ${fetchErr?.message || 'Inconnu'} (ID: ${entretienId})` }
+  }
 
   // 2. Vérification rôle stricte
   const { data: callerProfile } = await supabase

@@ -29,7 +29,9 @@ import {
   type DocumentStatus 
 } from '@/app/actions/documents'
 import { getEntretiensByCollaborator, getManagerTeam, createEntretien, getCollaboratorEadSummary } from '@/app/actions/ead'
+import { getMyAbsences, type Absence, ABSENCE_TYPE_LABELS, NIVEAU_RISQUE_LABELS } from '@/app/actions/absences'
 import { EadView } from '../ead/ead-view'
+import { AbsenceDeclarationForm } from '../absences/absence-declaration-form'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 
@@ -57,7 +59,7 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
   const [activeUploadType, setActiveUploadType] = useState<string | null>(null)
 
   // ── Navigation et EAD ──
-  const [activeTab, setActiveTab] = useState<'onboarding' | 'mes_ead' | 'equipe_ead'>('onboarding')
+  const [activeTab, setActiveTab] = useState<'onboarding' | 'mes_ead' | 'equipe_ead' | 'absences'>('onboarding')
   const [myEads, setMyEads] = useState<any[]>([])
   const [team, setTeam] = useState<any[]>([])
   const [teamEads, setTeamEads] = useState<Record<string, any[]>>({})
@@ -66,6 +68,11 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
     prochainEntretien: { id: string; date_heure_prevue: string } | null
     dernierEntretienSigne: { id: string; updated_at: string } | null
   }>({ prochainEntretien: null, dernierEntretienSigne: null })
+
+  // ── Absences ──
+  const [myAbsences, setMyAbsences] = useState<Absence[]>([])
+  const [showAbsenceForm, setShowAbsenceForm] = useState(false)
+  const [myCollaborateurId, setMyCollaborateurId] = useState<string | null>(null)
 
   const loadData = async () => {
     setLoading(true)
@@ -78,6 +85,8 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
+        setMyCollaborateurId(user.id)
+
         // Charger mes EAD
         const eadRes = await getEntretiensByCollaborator(user.id)
         if (eadRes.data) setMyEads(eadRes.data)
@@ -88,6 +97,10 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
           prochainEntretien: summaryRes.prochainEntretien as any,
           dernierEntretienSigne: summaryRes.dernierEntretienSigne as any,
         })
+
+        // Charger mes absences
+        const absRes = await getMyAbsences()
+        setMyAbsences(absRes.absences)
 
         // Charger mon équipe si je suis manager
         const teamRes = await getManagerTeam()
@@ -406,6 +419,21 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
                   {activeTab === 'equipe_ead' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#00b2de] rounded-t-full" />}
                 </button>
               )}
+              <button
+                onClick={() => setActiveTab('absences')}
+                className={cn(
+                  "pb-3 text-sm font-medium transition-colors relative whitespace-nowrap flex items-center gap-2",
+                  activeTab === 'absences' ? "text-[#00b2de]" : "text-slate-500 hover:text-slate-800"
+                )}
+              >
+                Mes absences
+                {myAbsences.filter(a => !a.date_fin_reelle).length > 0 && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">
+                    {myAbsences.filter(a => !a.date_fin_reelle).length}
+                  </span>
+                )}
+                {activeTab === 'absences' && <span className="absolute bottom-0 left-0 w-full h-0.5 bg-[#00b2de] rounded-t-full" />}
+              </button>
             </div>
 
             {activeTab === 'onboarding' && (
@@ -638,6 +666,72 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
                 </div>
               </div>
             )}
+
+            {activeTab === 'absences' && (
+              <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-slate-900">Mes absences</h2>
+                  {myCollaborateurId && (
+                    <button
+                      onClick={() => setShowAbsenceForm(true)}
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#00b2de] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#0096c7] transition-colors"
+                    >
+                      + Déclarer une absence
+                    </button>
+                  )}
+                </div>
+
+                {myAbsences.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 py-16 text-center">
+                    <span className="text-3xl">🏖️</span>
+                    <p className="text-sm font-medium text-slate-600">Aucune absence déclarée</p>
+                    <p className="text-xs text-slate-400">Utilisez le bouton ci-dessus pour déclarer une absence.</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {myAbsences.map((absence) => (
+                      <div key={absence.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-3">
+                            <span className={cn(
+                              'inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-semibold',
+                              absence.type === 'accident_travail' ? 'bg-red-100 text-red-700' :
+                              absence.type === 'maladie' ? 'bg-amber-100 text-amber-700' :
+                              'bg-slate-100 text-slate-700'
+                            )}>
+                              {ABSENCE_TYPE_LABELS[absence.type]}
+                            </span>
+                            <span className={cn(
+                              'text-xs font-medium',
+                              !absence.date_fin_reelle ? 'text-amber-600' : 'text-slate-400'
+                            )}>
+                              {!absence.date_fin_reelle ? '● En cours' : '✓ Terminée'}
+                            </span>
+                          </div>
+                          {absence.absences_documents.length > 0 ? (
+                            <span className="text-xs text-emerald-600 font-medium">✓ Certificat fourni</span>
+                          ) : (
+                            <span className="text-xs text-slate-400">Certificat manquant</span>
+                          )}
+                        </div>
+                        <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
+                          <span>Du <strong className="text-slate-700">{new Date(absence.date_debut).toLocaleDateString('fr-FR')}</strong></span>
+                          {absence.date_fin_prevue && (
+                            <span>au <strong className="text-slate-700">{new Date(absence.date_fin_prevue).toLocaleDateString('fr-FR')}</strong> (prévu)</span>
+                          )}
+                          {absence.date_fin_reelle && (
+                            <span>au <strong className="text-slate-700">{new Date(absence.date_fin_reelle).toLocaleDateString('fr-FR')}</strong> (réel)</span>
+                          )}
+                        </div>
+                        {absence.mission_ou_client_concerne && (
+                          <p className="mt-1.5 text-xs text-slate-500">Mission : {absence.mission_ou_client_concerne}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -721,6 +815,18 @@ export function CollaboratorView({ onBack, user }: { onBack?: () => void, user?:
               </div>
             </div>
           </div>
+        )}
+
+        {showAbsenceForm && myCollaborateurId && (
+          <AbsenceDeclarationForm
+            collaborateurId={myCollaborateurId}
+            onSuccess={async () => {
+              setShowAbsenceForm(false)
+              const absRes = await getMyAbsences()
+              setMyAbsences(absRes.absences)
+            }}
+            onClose={() => setShowAbsenceForm(false)}
+          />
         )}
       </main>
     </div>

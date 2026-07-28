@@ -347,3 +347,122 @@ export async function updateAbsenceManagerFields(
   revalidatePath('/')
   return { success: true }
 }
+
+// ─────────────────────────────────────────────────────────────
+// getAbsencesDashboard
+// Retourne toutes les absences avec profil du collaborateur,
+// pour le tableau de bord RH/Manager.
+// RH → tous les collaborateurs
+// Manager → uniquement son équipe (via manager_id)
+// ─────────────────────────────────────────────────────────────
+
+export interface AbsenceDashboardRow {
+  absence: Absence
+  collaborateur: {
+    id: string
+    first_name: string
+    last_name: string
+    email: string
+    job_title: string | null
+    manager_id: string | null
+    manager_first_name: string | null
+    manager_last_name: string | null
+  }
+}
+
+export async function getAbsencesDashboard(): Promise<{
+  rows: AbsenceDashboardRow[]
+  userRole: 'hr' | 'manager'
+  error?: string
+}> {
+  const supabase = await createClient()
+  const caller = await getCallerInfo(supabase)
+  if (!caller) return { rows: [], userRole: 'manager', error: 'Non authentifié' }
+
+  // Construire la requête selon le rôle
+  let query = supabase
+    .from('absences')
+    .select(`
+      id, collaborateur_id, type, date_debut, date_fin_prevue, date_fin_reelle,
+      mission_ou_client_concerne, niveau_de_risque, commentaire,
+      declare_par, created_at,
+      absences_documents(id, file_url, file_name, uploaded_at),
+      collaborateur:profiles!absences_collaborateur_id_fkey(
+        id, first_name, last_name, email, job_title, manager_id,
+        manager:profiles!profiles_manager_id_fkey(first_name, last_name)
+      )
+    `)
+    .order('date_debut', { ascending: false })
+
+  const { data, error } = await query
+
+  if (error) {
+    console.error('Erreur getAbsencesDashboard:', error)
+    return { rows: [], userRole: caller.isHR ? 'hr' : 'manager', error: error.message }
+  }
+
+  const rows: AbsenceDashboardRow[] = (data || []).map((item: any) => {
+    const collab = item.collaborateur
+    const mgr = collab?.manager
+    return {
+      absence: {
+        id: item.id,
+        collaborateur_id: item.collaborateur_id,
+        type: item.type,
+        date_debut: item.date_debut,
+        date_fin_prevue: item.date_fin_prevue,
+        date_fin_reelle: item.date_fin_reelle,
+        mission_ou_client_concerne: item.mission_ou_client_concerne,
+        niveau_de_risque: item.niveau_de_risque,
+        commentaire: item.commentaire,
+        declare_par: item.declare_par,
+        created_at: item.created_at,
+        absences_documents: item.absences_documents || [],
+      },
+      collaborateur: {
+        id: collab?.id ?? item.collaborateur_id,
+        first_name: collab?.first_name ?? '',
+        last_name: collab?.last_name ?? '',
+        email: collab?.email ?? '',
+        job_title: collab?.job_title ?? null,
+        manager_id: collab?.manager_id ?? null,
+        manager_first_name: mgr?.first_name ?? null,
+        manager_last_name: mgr?.last_name ?? null,
+      },
+    }
+  })
+
+  return { rows, userRole: caller.isHR ? 'hr' : 'manager' }
+}
+
+// ─────────────────────────────────────────────────────────────
+// cloturerAbsence
+// Renseigne la date_fin_reelle pour marquer l'absence comme terminée.
+// Autorisé : RH seulement (le Manager peut voir mais pas clôturer,
+// c'est une décision RH). Si besoin d'ouvrir au Manager plus tard,
+// il suffit d'ajouter la vérification isManagerOf.
+// ─────────────────────────────────────────────────────────────
+
+export async function cloturerAbsence(absenceId: string, dateFinReelle: string) {
+  const supabase = await createClient()
+  const caller = await getCallerInfo(supabase)
+  if (!caller) return { error: 'Non authentifié' }
+
+  if (!caller.isHR) {
+    return { error: 'Seul le service RH peut clôturer une absence.' }
+  }
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from('absences')
+    .update({ date_fin_reelle: dateFinReelle })
+    .eq('id', absenceId)
+
+  if (error) {
+    console.error('Erreur cloturerAbsence:', error)
+    return { error: 'Erreur lors de la clôture.' }
+  }
+
+  revalidatePath('/')
+  return { success: true }
+}

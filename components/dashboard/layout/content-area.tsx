@@ -1,5 +1,6 @@
 import { HRTable } from '../hr/hr-table'
 import { EadDashboard } from '../ead/ead-dashboard'
+import { AbsencesDashboard } from '../absences/absences-dashboard'
 import { NAV_LABELS } from './nav-config'
 
 export function ContentArea({ activeId, onViewDetail }: { activeId: string, onViewDetail?: (id: string) => void }) {
@@ -33,6 +34,10 @@ export function ContentArea({ activeId, onViewDetail }: { activeId: string, onVi
 
   if (activeId === 'ead') {
     return <EadDashboard />
+  }
+
+  if (activeId === 'absences') {
+    return <AbsencesDashboard />
   }
 
   // Placeholder pour les autres onglets

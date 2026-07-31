@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
       continue
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://bsn-onboarding.vercel.app'
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://bsnonboarding.netlify.app'
     const lienEad = `${appUrl}/ead/${entretien.id}`
     const firstName = profile.first_name || 'Collaborateur'
 

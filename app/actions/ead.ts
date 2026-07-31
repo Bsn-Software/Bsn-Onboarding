@@ -471,7 +471,7 @@ async function sendEadNotification(
 
   if (!profile?.email) return
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://bsn-onboarding.vercel.app'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://bsnonboarding.netlify.app'
   const lienEad = `${appUrl}/ead/${entretienId}`
   const firstName = profile.first_name || 'Collaborateur'
 

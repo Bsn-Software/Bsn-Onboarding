@@ -164,7 +164,7 @@ export async function sendInvitationInternal(collaboratorId: string) {
   }
 
   // 1. Générer le lien de récupération/création de mot de passe
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://bsnonboarding.netlify.app'
   const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
     type: 'recovery',
     email: profile.email,

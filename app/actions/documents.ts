@@ -274,7 +274,7 @@ export async function sendDocumentReminder(collaboratorId: string, documentLabel
   }
 
   // 3. Générer le lien vers l'espace collaborateur
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://bsnonboarding.netlify.app'
   const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
     type: 'recovery',
     email: profile.email,
@@ -371,7 +371,7 @@ export async function sendGroupedDocumentReminder(collaboratorId: string) {
   }
 
   // 5. Générer le lien vers l'espace collaborateur
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://127.0.0.1:3000'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://bsnonboarding.netlify.app'
   const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
     type: 'recovery',
     email: profile.email,

@@ -59,7 +59,10 @@ export async function createAbsence(data: CreateAbsenceData) {
     return { error: "Vous ne pouvez déclarer une absence que pour vous-même." }
   }
 
-  const { data: absence, error } = await supabase
+  // Utilisation du client admin pour bypasser la RLS sur INSERT —
+  // la vérification des droits est faite côté applicatif (lignes précédentes).
+  const admin = createAdminClient()
+  const { data: absence, error } = await admin
     .from('absences')
     .insert({
       collaborateur_id: data.collaborateur_id,

@@ -100,7 +100,7 @@ CREATE POLICY "Absences docs - RH acces complet" ON public.absences_documents
 
 -- Manager : SELECT sur les certificats de son équipe
 CREATE POLICY "Absences docs - manager lecture equipe" ON public.absences_documents
-  FOR SELECT
+  FOR SELECT   
   USING (
     EXISTS (
       SELECT 1 FROM public.absences a

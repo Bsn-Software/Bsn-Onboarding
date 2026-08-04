@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import {
   X, Loader2, UploadCloud, FileText, Calendar,
-  AlertTriangle, ShieldAlert, CheckCircle2
+  AlertTriangle, ShieldAlert, CheckCircle2, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -55,6 +55,9 @@ export function AbsenceDeclarationForm({ collaborateurId, collaborateurNom, onSu
   const [niveauRisque, setNiveauRisque] = useState<NiveauRisque>('aucun')
   const [commentaire, setCommentaire] = useState('')
 
+  // Pickers ouverts
+  const [openPicker, setOpenPicker] = useState<'debut' | 'fin' | null>(null)
+
   // Upload certificat
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -62,6 +65,10 @@ export function AbsenceDeclarationForm({ collaborateurId, collaborateurNom, onSu
 
   // États de soumission
   const [submitting, setSubmitting] = useState(false)
+
+  // ── Helpers Date ────────────────────────────────────────────
+  const toISO = (d: Date) => d.toISOString().split('T')[0]
+  const today = toISO(new Date())
 
   // ── Gestion du fichier ──────────────────────────────────────
   const handleFileSelect = (file: File) => {
@@ -194,37 +201,148 @@ export function AbsenceDeclarationForm({ collaborateurId, collaborateurNom, onSu
           </div>
 
           {/* Dates */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Date de début */}
             <div className="space-y-1.5">
               <label className="block text-sm font-medium text-slate-700">
                 Date de début <span className="text-red-500">*</span>
               </label>
               <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
-                <input
-                  type="date"
-                  value={dateDebut}
-                  onChange={(e) => setDateDebut(e.target.value)}
-                  required
-                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 focus:border-[#00b2de] focus:outline-none focus:ring-2 focus:ring-[#00b2de]/20"
-                />
+                <button
+                  type="button"
+                  onClick={() => setOpenPicker(openPicker === 'debut' ? null : 'debut')}
+                  className={cn(
+                    'flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-all',
+                    dateDebut ? 'text-slate-900' : 'text-slate-400',
+                    openPicker === 'debut'
+                      ? 'border-[#00b2de] ring-2 ring-[#00b2de]/20 bg-white'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  )}
+                >
+                  <Calendar className="size-4 text-slate-400 shrink-0" />
+                  <span className="flex-1 text-left">
+                    {dateDebut
+                      ? new Date(dateDebut + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+                      : 'Choisir une date'}
+                  </span>
+                  {dateDebut && (
+                    <span
+                      role="button"
+                      onClick={(e) => { e.stopPropagation(); setDateDebut(''); setDateFinPrevue('') }}
+                      className="flex size-4 items-center justify-center rounded-full text-slate-400 hover:text-slate-700"
+                    >
+                      <X className="size-3" />
+                    </span>
+                  )}
+                </button>
+
+                {openPicker === 'debut' && (
+                  <DatePickerDropdown
+                    value={dateDebut}
+                    onChange={(d) => { setDateDebut(d); setOpenPicker(null) }}
+                    onClose={() => setOpenPicker(null)}
+                    today={today}
+                  />
+                )}
+              </div>
+
+              {/* Raccourcis */}
+              <div className="flex gap-2">
+                {[
+                  { label: "Aujourd'hui", value: today },
+                  { label: 'Hier', value: toISO(new Date(Date.now() - 86400000)) },
+                  { label: 'Il y a 7j', value: toISO(new Date(Date.now() - 7 * 86400000)) },
+                ].map(s => (
+                  <button
+                    key={s.label}
+                    type="button"
+                    onClick={() => { setDateDebut(s.value); setOpenPicker(null) }}
+                    className={cn(
+                      'rounded-lg border px-2.5 py-1 text-xs font-medium transition-all',
+                      dateDebut === s.value
+                        ? 'border-[#00b2de] bg-[#00b2de]/10 text-[#00b2de]'
+                        : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                    )}
+                  >
+                    {s.label}
+                  </button>
+                ))}
               </div>
             </div>
+
+            {/* Date de fin prévue */}
             <div className="space-y-1.5">
               <label className="block text-sm font-medium text-slate-700">
                 Date de fin prévue
                 <span className="ml-1 text-xs text-slate-400 font-normal">(optionnel)</span>
               </label>
               <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400 pointer-events-none" />
-                <input
-                  type="date"
-                  value={dateFinPrevue}
-                  min={dateDebut}
-                  onChange={(e) => setDateFinPrevue(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 focus:border-[#00b2de] focus:outline-none focus:ring-2 focus:ring-[#00b2de]/20"
-                />
+                <button
+                  type="button"
+                  onClick={() => setOpenPicker(openPicker === 'fin' ? null : 'fin')}
+                  className={cn(
+                    'flex w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm transition-all',
+                    dateFinPrevue ? 'text-slate-900' : 'text-slate-400',
+                    openPicker === 'fin'
+                      ? 'border-[#00b2de] ring-2 ring-[#00b2de]/20 bg-white'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  )}
+                >
+                  <Calendar className="size-4 text-slate-400 shrink-0" />
+                  <span className="flex-1 text-left">
+                    {dateFinPrevue
+                      ? new Date(dateFinPrevue + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+                      : 'Choisir une date'}
+                  </span>
+                  {dateFinPrevue && (
+                    <span
+                      role="button"
+                      onClick={(e) => { e.stopPropagation(); setDateFinPrevue('') }}
+                      className="flex size-4 items-center justify-center rounded-full text-slate-400 hover:text-slate-700"
+                    >
+                      <X className="size-3" />
+                    </span>
+                  )}
+                </button>
+
+                {openPicker === 'fin' && (
+                  <DatePickerDropdown
+                    value={dateFinPrevue}
+                    minDate={dateDebut || today}
+                    onChange={(d) => { setDateFinPrevue(d); setOpenPicker(null) }}
+                    onClose={() => setOpenPicker(null)}
+                    today={today}
+                  />
+                )}
               </div>
+
+              {/* Raccourcis relatifs à la date de début */}
+              {dateDebut && (
+                <div className="flex gap-2">
+                  {[
+                    { label: '+7 jours', days: 7 },
+                    { label: '+30 jours', days: 30 },
+                    { label: '+90 jours', days: 90 },
+                  ].map(s => {
+                    const v = toISO(new Date(new Date(dateDebut).getTime() + s.days * 86400000))
+                    return (
+                      <button
+                        key={s.label}
+                        type="button"
+                        onClick={() => { setDateFinPrevue(v); setOpenPicker(null) }}
+                        className={cn(
+                          'rounded-lg border px-2.5 py-1 text-xs font-medium transition-all',
+                          dateFinPrevue === v
+                            ? 'border-[#00b2de] bg-[#00b2de]/10 text-[#00b2de]'
+                            : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                        )}
+                      >
+                        {s.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -365,6 +483,127 @@ export function AbsenceDeclarationForm({ collaborateurId, collaborateurNom, onSu
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// DatePickerDropdown — calendrier inline
+// ─────────────────────────────────────────────────────────────
+
+const MONTHS_FR = [
+  'Janvier','Février','Mars','Avril','Mai','Juin',
+  'Juillet','Août','Septembre','Octobre','Novembre','Décembre',
+]
+const DAYS_FR = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di']
+
+function DatePickerDropdown({
+  value,
+  onChange,
+  onClose,
+  today,
+  minDate,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onClose: () => void
+  today: string
+  minDate?: string
+}) {
+  const initDate = value ? new Date(value + 'T00:00:00') : new Date()
+  const [viewYear, setViewYear] = useState(initDate.getFullYear())
+  const [viewMonth, setViewMonth] = useState(initDate.getMonth())
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1) }
+    else setViewMonth(m => m - 1)
+  }
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1) }
+    else setViewMonth(m => m + 1)
+  }
+
+  // Calcul des jours du mois à afficher
+  const firstDay = new Date(viewYear, viewMonth, 1)
+  // Lundi = 0, ..., Dimanche = 6
+  const startOffset = (firstDay.getDay() + 6) % 7
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate()
+  const cells: (number | null)[] = [
+    ...Array(startOffset).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ]
+  // Pad to complete last row
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const toISO = (d: number) => {
+    const mm = String(viewMonth + 1).padStart(2, '0')
+    const dd = String(d).padStart(2, '0')
+    return `${viewYear}-${mm}-${dd}`
+  }
+
+  return (
+    <div
+      className="absolute left-0 top-full z-50 mt-1 w-72 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl"
+      onMouseDown={(e) => e.preventDefault()} // Empêche blur sur le bouton parent
+    >
+      {/* Navigation mois */}
+      <div className="flex items-center justify-between mb-3">
+        <button type="button" onClick={prevMonth} className="flex size-7 items-center justify-center rounded-lg hover:bg-slate-100 transition-colors">
+          <ChevronLeft className="size-4 text-slate-600" />
+        </button>
+        <span className="text-sm font-semibold text-slate-800">
+          {MONTHS_FR[viewMonth]} {viewYear}
+        </span>
+        <button type="button" onClick={nextMonth} className="flex size-7 items-center justify-center rounded-lg hover:bg-slate-100 transition-colors">
+          <ChevronRight className="size-4 text-slate-600" />
+        </button>
+      </div>
+
+      {/* Jours de la semaine */}
+      <div className="grid grid-cols-7 mb-1">
+        {DAYS_FR.map(d => (
+          <div key={d} className="text-center text-[10px] font-semibold uppercase text-slate-400 py-1">{d}</div>
+        ))}
+      </div>
+
+      {/* Grille de dates */}
+      <div className="grid grid-cols-7 gap-0.5">
+        {cells.map((day, i) => {
+          if (!day) return <div key={`e-${i}`} />
+          const iso = toISO(day)
+          const isSelected = iso === value
+          const isToday = iso === today
+          const disabled = !!minDate && iso < minDate
+          return (
+            <button
+              key={iso}
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange(iso)}
+              className={cn(
+                'flex size-8 mx-auto items-center justify-center rounded-lg text-sm transition-all',
+                disabled && 'opacity-30 cursor-not-allowed',
+                isSelected && 'bg-[#00b2de] text-white font-semibold shadow-sm',
+                !isSelected && isToday && 'border border-[#00b2de] text-[#00b2de] font-semibold',
+                !isSelected && !isToday && !disabled && 'text-slate-700 hover:bg-slate-100',
+              )}
+            >
+              {day}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Raccourci Aujourd'hui */}
+      <div className="mt-2 border-t border-slate-100 pt-2">
+        <button
+          type="button"
+          onClick={() => onChange(today)}
+          className="w-full rounded-lg py-1.5 text-xs font-medium text-[#00b2de] hover:bg-[#00b2de]/5 transition-colors"
+        >
+          Aujourd'hui
+        </button>
       </div>
     </div>
   )

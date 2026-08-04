@@ -1,11 +1,12 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit2, Trash2, Save, X, Loader2, CheckCircle2, GripVertical, ChevronDown, ChevronRight, FileText, Layers, PlusCircle } from 'lucide-react'
+import { Plus, Edit2, Trash2, Save, X, Loader2, CheckCircle2, GripVertical, ChevronDown, ChevronRight, FileText, Layers, PlusCircle, ClipboardList } from 'lucide-react'
 import { getAllTemplates, createTemplate, updateTemplate, deleteTemplate, hardDeleteTemplate, updateTemplatesOrder } from '@/app/actions/templates'
 import type { ChecklistTemplate } from '@/app/actions/checklist'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { SettingsEadItems } from './settings-ead-items'
 
 import { CATEGORY_COLORS } from './timeline-s-curve'
 
@@ -53,7 +54,7 @@ const ToggleRow = ({ checked, onChange, label, desc }: { checked: boolean, onCha
 export function SettingsView() {
   const [templates, setTemplates] = useState<ChecklistTemplate[]>([])
   const [loading, setLoading] = useState(true)
-  const [activePhase, setActivePhase] = useState<'entry' | 'exit'>('entry')
+  const [activePhase, setActivePhase] = useState<'entry' | 'exit' | 'ead'>('entry')
   
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
@@ -971,85 +972,102 @@ export function SettingsView() {
         >
           Sorties (Offboarding)
         </button>
+        <button
+          onClick={() => { setActivePhase('ead'); handleCancel() }}
+          className={cn(
+            "flex items-center gap-1.5 px-4 py-2 font-medium text-sm transition-colors border-b-2",
+            activePhase === 'ead' ? "border-[#00b2de] text-[#00b2de]" : "border-transparent text-slate-500 hover:text-slate-800"
+          )}
+        >
+          <ClipboardList className="size-3.5" />
+          Items EAD
+        </button>
       </div>
 
-      <div className="mb-4 flex justify-between items-center">
-        <h2 className="font-semibold text-slate-800">
-          Liste des éléments ({activePhase === 'entry' ? 'Entrée' : 'Sortie'})
-        </h2>
-        {!isAdding && !editingId && (
-          <button
-            onClick={handleAdd}
-            className="flex items-center gap-2 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-slate-700 transition-colors"
-          >
-            <Plus className="size-4" />
-            Ajouter un élément
-          </button>
-        )}
-      </div>
+      {activePhase !== 'ead' && (
+        <div className="mb-4 flex justify-between items-center">
+          <h2 className="font-semibold text-slate-800">
+            Liste des éléments ({activePhase === 'entry' ? 'Entrée' : 'Sortie'})
+          </h2>
+          {!isAdding && !editingId && (
+            <button
+              onClick={handleAdd}
+              className="flex items-center gap-2 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-slate-700 transition-colors"
+            >
+              <Plus className="size-4" />
+              Ajouter un élément
+            </button>
+          )}
+        </div>
+      )}
 
       {renderEditor()}
 
-      {/* Templates List */}
-      {loading ? (
-        <div className="py-20 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>
-      ) : (
-        <div className="space-y-6">
-          {CATEGORIES.map(category => {
-            const items = filteredTemplates.filter(t => t.category === category.id)
-            
-            const catColors = CATEGORY_COLORS[category.id] || { bg: "bg-slate-100", text: "text-slate-600", border: "border-slate-200" }
+      {/* Onglet EAD */}
+      {activePhase === 'ead' && <SettingsEadItems />}
 
-            const isOpen = openCategories.has(category.id)
+      {/* Templates List — masqué quand onglet EAD actif */}
+      {activePhase !== 'ead' && (
+        loading ? (
+          <div className="py-20 flex justify-center"><Loader2 className="size-8 animate-spin text-slate-300" /></div>
+        ) : (
+          <div className="space-y-6">
+            {CATEGORIES.map(category => {
+              const items = filteredTemplates.filter(t => t.category === category.id)
+              
+              const catColors = CATEGORY_COLORS[category.id] || { bg: "bg-slate-100", text: "text-slate-600", border: "border-slate-200" }
 
-            return (
-              <div key={category.id} className={cn("bg-white rounded-xl border overflow-hidden shadow-sm animate-in fade-in transition-all", catColors.border)}>
-                <button
-                  onClick={() => toggleCategory(category.id)}
-                  className={cn("w-full px-4 py-3 font-semibold flex items-center gap-2 hover:opacity-90 transition-opacity", catColors.bg, catColors.text, isOpen && "border-b", isOpen ? catColors.border : "border-transparent")}
-                >
-                  {isOpen ? <ChevronDown className="size-4 shrink-0" /> : <ChevronRight className="size-4 shrink-0" />}
-                  {category.label}
-                  <span className="ml-auto text-xs font-medium bg-white/50 px-2 py-0.5 rounded-full">{items.length} élément{items.length > 1 ? 's' : ''}</span>
-                </button>
-                {isOpen && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm whitespace-nowrap">
-                    <thead className="bg-slate-50 border-b border-slate-200">
-                      <tr>
-                        <th className="w-10 px-2 py-3"></th>
-                        <th className="px-4 py-3 font-semibold text-slate-600 w-20">Ordre</th>
-                        <th className="px-4 py-3 font-semibold text-slate-600">Label</th>
-                        <th className="px-4 py-3 font-semibold text-slate-600 w-32">Statut</th>
-                        <th className="px-4 py-3 font-semibold text-slate-600 text-right w-32">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {items.length > 0 ? (
-                        renderTemplateList(items, category.id)
-                      ) : (
-                        <tr 
-                          onDragOver={handleDragOver} 
-                          onDragEnter={(e) => handleDragEnter(e, category.id)}
-                          onDrop={(e) => handleDrop(e, category.id)}
-                          className={cn(
-                            "transition-colors",
-                            dropTargetId === category.id && "bg-slate-50 border-t-2 border-[#00b2de]"
-                          )}
-                        >
-                          <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500 border-dashed border-2 border-slate-200 m-4 rounded-xl">
-                            Aucun élément. Glissez-déposez ici.
-                          </td>
+              const isOpen = openCategories.has(category.id)
+
+              return (
+                <div key={category.id} className={cn("bg-white rounded-xl border overflow-hidden shadow-sm animate-in fade-in transition-all", catColors.border)}>
+                  <button
+                    onClick={() => toggleCategory(category.id)}
+                    className={cn("w-full px-4 py-3 font-semibold flex items-center gap-2 hover:opacity-90 transition-opacity", catColors.bg, catColors.text, isOpen && "border-b", isOpen ? catColors.border : "border-transparent")}
+                  >
+                    {isOpen ? <ChevronDown className="size-4 shrink-0" /> : <ChevronRight className="size-4 shrink-0" />}
+                    {category.label}
+                    <span className="ml-auto text-xs font-medium bg-white/50 px-2 py-0.5 rounded-full">{items.length} élément{items.length > 1 ? 's' : ''}</span>
+                  </button>
+                  {isOpen && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm whitespace-nowrap">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                          <th className="w-10 px-2 py-3"></th>
+                          <th className="px-4 py-3 font-semibold text-slate-600 w-20">Ordre</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600">Label</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600 w-32">Statut</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600 text-right w-32">Actions</th>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {items.length > 0 ? (
+                          renderTemplateList(items, category.id)
+                        ) : (
+                          <tr 
+                            onDragOver={handleDragOver} 
+                            onDragEnter={(e) => handleDragEnter(e, category.id)}
+                            onDrop={(e) => handleDrop(e, category.id)}
+                            className={cn(
+                              "transition-colors",
+                              dropTargetId === category.id && "bg-slate-50 border-t-2 border-[#00b2de]"
+                            )}
+                          >
+                            <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500 border-dashed border-2 border-slate-200 m-4 rounded-xl">
+                              Aucun élément. Glissez-déposez ici.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  )}
                 </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        )
       )}
     </div>
   )

@@ -3,6 +3,24 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { ClipboardList, FileDown, ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react'
 import { getEntretienById, upsertEntretien, signEntretien } from '@/app/actions/ead'
+import { getEadItemsConfig } from '@/app/actions/ead-config'
+import {
+  buildConfigMap,
+  resolveComportementaux,
+  resolveReferentiel,
+} from '@/lib/ead-items-resolver'
+import {
+  ITEMS_MODULE_3,
+  ITEMS_MODULE_4,
+  ITEMS_MODULE_5,
+} from '@/components/dashboard/ead/items-evaluation'
+import {
+  MODULE_6_CONNAISSANCES_TECHNIQUES,
+  MODULE_7_COMPETENCES_PROJET,
+  MODULE_8_PERIMETRES,
+  MODULE_9_SECTEURS,
+} from '@/components/dashboard/ead/referentiels'
+import { initTableauFromRef } from '@/components/dashboard/ead/tableau-competences-techniques'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import {
@@ -121,8 +139,39 @@ export function EadView({ entretienId, onBack }: { entretienId?: string, onBack?
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!entretienId) {
-      setLoading(false)
-      setInitialLoadDone(true)
+      // Nouveau entretien : on charge la config et on filtre les items
+      getEadItemsConfig().then(configs => {
+        const cfgMap = buildConfigMap(configs)
+
+        setEvaluation({
+          competences_generales: {
+            items: resolveComportementaux(ITEMS_MODULE_3, cfgMap),
+            commentaire: '',
+          },
+          sens_du_service: {
+            items: resolveComportementaux(ITEMS_MODULE_4, cfgMap),
+            commentaire: '',
+          },
+          expertise_metier: {
+            items: resolveComportementaux(ITEMS_MODULE_5, cfgMap),
+            commentaire: '',
+          },
+        })
+
+        setReferentiel({
+          connaissances_techniques: initTableauFromRef(resolveReferentiel(MODULE_6_CONNAISSANCES_TECHNIQUES, cfgMap)),
+          competences_projet:       initTableauFromRef(resolveReferentiel(MODULE_7_COMPETENCES_PROJET, cfgMap)),
+          perimetres_intervention:  initTableauFromRef(resolveReferentiel(MODULE_8_PERIMETRES, cfgMap)),
+          secteurs_intervention:    initTableauFromRef(resolveReferentiel(MODULE_9_SECTEURS, cfgMap)),
+        })
+
+        setLoading(false)
+        setInitialLoadDone(true)
+      }).catch(() => {
+        // En cas d'erreur, on utilise les valeurs par défaut
+        setLoading(false)
+        setInitialLoadDone(true)
+      })
       return
     }
 

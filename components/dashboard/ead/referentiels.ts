@@ -3,6 +3,13 @@
 // CDC §4 : "Référentiels à seeder en base, pas à faire ressaisir"
 // Ces constantes sont la source de vérité côté front.
 // Elles correspondent aux seeds qui seront insérés en base à l'étape 6.
+//
+// ⚠️  STABILITÉ DES IDENTIFIANTS :
+// Les champs `id` (ex : 'm6-01', 'm7-03') sont des IDENTIFIANTS STABLES
+// explicitement hardcodés — ils ne sont PAS calculés par position dans le tableau.
+// Un réordonnancement ou un ajout d'items dans ces tableaux ne décale PAS
+// les personnalisations stockées dans la table `ead_items_config`.
+// → Ne jamais changer la valeur `id` d'un item existant sans migrer la BDD.
 // ─────────────────────────────────────────────────────────────
 
 export type RefItem = {

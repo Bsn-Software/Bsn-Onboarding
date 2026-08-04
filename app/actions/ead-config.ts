@@ -11,7 +11,8 @@ import { revalidatePath } from 'next/cache'
 export interface EadItemConfig {
   id: string
   item_code: string
-  libelle: string | null   // null = utilise le libellé par défaut
+  libelle: string | null        // null = utilise le libellé par défaut
+  sous_libelle: string | null   // null = utilise le sous_libelle par défaut (Module 7 uniquement)
   actif: boolean
   updated_at: string
 }
@@ -40,7 +41,7 @@ export async function getEadItemsConfig(): Promise<EadItemConfig[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('ead_items_config')
-    .select('id, item_code, libelle, actif, updated_at')
+    .select('id, item_code, libelle, sous_libelle, actif, updated_at')
     .order('item_code')
 
   if (error) {
@@ -59,7 +60,7 @@ export async function getEadItemsConfig(): Promise<EadItemConfig[]> {
 
 export async function upsertEadItemConfig(
   itemCode: string,
-  patch: { libelle?: string | null; actif?: boolean }
+  patch: { libelle?: string | null; sous_libelle?: string | null; actif?: boolean }
 ) {
   const user = await assertHR()
   if (!user) return { error: 'Accès refusé.' }
@@ -73,6 +74,7 @@ export async function upsertEadItemConfig(
       {
         item_code: itemCode,
         libelle: patch.libelle ?? null,
+        sous_libelle: patch.sous_libelle ?? null,
         actif: patch.actif ?? true,
         updated_at: new Date().toISOString(),
       },

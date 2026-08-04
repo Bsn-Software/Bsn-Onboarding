@@ -15,6 +15,7 @@ import {
 import {
   buildConfigMap,
   getEffectiveLibelle,
+  getEffectiveSousLibelle,
   isItemActif,
   isItemCustomized,
   type ConfigMap,
@@ -76,6 +77,7 @@ function ItemRow({
   code,
   defaultLibelle,
   sousLibelle,
+  hasSousLibelle = false,
   configMap,
   onToggle,
   onSaveLibelle,
@@ -84,23 +86,27 @@ function ItemRow({
   code: string
   defaultLibelle: string
   sousLibelle?: string
+  hasSousLibelle?: boolean  // true pour les items Module 7 qui ont un sous_libelle
   configMap: ConfigMap
   onToggle: (code: string, actif: boolean) => Promise<void>
-  onSaveLibelle: (code: string, libelle: string) => Promise<void>
+  onSaveLibelle: (code: string, libelle: string, sousLibelle: string | null) => Promise<void>
   onReset: (code: string) => Promise<void>
 }) {
   const actif = isItemActif(code, configMap)
   const customized = isItemCustomized(code, configMap)
   const effectiveLibelle = getEffectiveLibelle(defaultLibelle, code, configMap)
+  const effectiveSousLibelle = getEffectiveSousLibelle(sousLibelle, code, configMap)
 
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(effectiveLibelle)
+  const [draftLibelle, setDraftLibelle] = useState(effectiveLibelle)
+  const [draftSousLibelle, setDraftSousLibelle] = useState(effectiveSousLibelle ?? '')
   const [saving, setSaving] = useState(false)
 
-  // Sync draft si la configMap change
+  // Sync drafts si la configMap change
   useEffect(() => {
-    setDraft(getEffectiveLibelle(defaultLibelle, code, configMap))
-  }, [configMap, code, defaultLibelle])
+    setDraftLibelle(getEffectiveLibelle(defaultLibelle, code, configMap))
+    setDraftSousLibelle(getEffectiveSousLibelle(sousLibelle, code, configMap) ?? '')
+  }, [configMap, code, defaultLibelle, sousLibelle])
 
   const handleToggle = async () => {
     setSaving(true)
@@ -109,26 +115,17 @@ function ItemRow({
   }
 
   const handleSave = async () => {
-    if (!draft.trim() || draft.trim() === defaultLibelle) {
-      // Si identique au défaut, on reset au lieu de sauvegarder un libellé inutile
-      setSaving(true)
-      const cfg = configMap.get(code)
-      if (cfg && draft.trim() === defaultLibelle) {
-        await onReset(code)
-      } else if (draft.trim()) {
-        await onSaveLibelle(code, draft.trim())
-      }
-      setSaving(false)
-    } else {
-      setSaving(true)
-      await onSaveLibelle(code, draft.trim())
-      setSaving(false)
-    }
+    const libelleToSave = draftLibelle.trim() || defaultLibelle
+    const sousLibelleToSave = hasSousLibelle ? (draftSousLibelle.trim() || null) : null
+    setSaving(true)
+    await onSaveLibelle(code, libelleToSave, sousLibelleToSave)
+    setSaving(false)
     setEditing(false)
   }
 
   const handleCancel = () => {
-    setDraft(effectiveLibelle)
+    setDraftLibelle(effectiveLibelle)
+    setDraftSousLibelle(effectiveSousLibelle ?? '')
     setEditing(false)
   }
 
@@ -151,39 +148,55 @@ function ItemRow({
       {/* Libellé */}
       <div className="flex-1 min-w-0">
         {editing ? (
-          <div className="flex items-center gap-2">
-            <input
-              autoFocus
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') handleSave()
-                if (e.key === 'Escape') handleCancel()
-              }}
-              className="flex-1 rounded-lg border border-[#00b2de] bg-white px-2.5 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00b2de]/20"
-            />
-            <button
-              onClick={handleSave}
-              disabled={saving || !draft.trim()}
-              className="flex size-7 items-center justify-center rounded-lg bg-[#00b2de] text-white hover:bg-[#0096c7] disabled:opacity-50 transition-colors"
-            >
-              {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-            </button>
-            <button
-              onClick={handleCancel}
-              className="flex size-7 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 transition-colors"
-            >
-              <X className="size-3.5" />
-            </button>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <input
+                autoFocus
+                value={draftLibelle}
+                onChange={e => setDraftLibelle(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') handleCancel() }}
+                placeholder="Libellé principal"
+                className="flex-1 rounded-lg border border-[#00b2de] bg-white px-2.5 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#00b2de]/20"
+              />
+            </div>
+            {hasSousLibelle && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 shrink-0 w-16">Sous-lib.</span>
+                <input
+                  value={draftSousLibelle}
+                  onChange={e => setDraftSousLibelle(e.target.value)}
+                  placeholder={sousLibelle ?? 'Sous-libellé (optionnel)'}
+                  className="flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 focus:border-[#00b2de] focus:outline-none focus:ring-2 focus:ring-[#00b2de]/20"
+                />
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <button
+                onClick={handleSave}
+                disabled={saving || !draftLibelle.trim()}
+                className="flex items-center gap-1.5 rounded-lg bg-[#00b2de] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#0096c7] disabled:opacity-50 transition-colors"
+              >
+                {saving ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                Enregistrer
+              </button>
+              <button
+                onClick={handleCancel}
+                className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                <X className="size-3" /> Annuler
+              </button>
+            </div>
           </div>
         ) : (
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className={cn('text-sm font-medium leading-snug truncate', !actif ? 'line-through text-slate-400' : 'text-slate-800')}>
-              {effectiveLibelle}
-            </span>
-            {sousLibelle && (
-              <span className="text-xs text-slate-400 shrink-0">({sousLibelle})</span>
-            )}
+            <div className="min-w-0">
+              <span className={cn('text-sm font-medium leading-snug', !actif ? 'line-through text-slate-400' : 'text-slate-800')}>
+                {effectiveLibelle}
+              </span>
+              {effectiveSousLibelle && (
+                <span className="block text-xs text-slate-400">{effectiveSousLibelle}</span>
+              )}
+            </div>
             {customized && (
               <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
                 modifié
@@ -198,7 +211,7 @@ function ItemRow({
         <div className="flex items-center gap-1 shrink-0">
           {/* Modifier libellé */}
           <button
-            onClick={() => { setDraft(effectiveLibelle); setEditing(true) }}
+            onClick={() => { setDraftLibelle(effectiveLibelle); setDraftSousLibelle(effectiveSousLibelle ?? ''); setEditing(true) }}
             disabled={saving}
             title="Modifier le libellé"
             className="flex size-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors disabled:opacity-50"
@@ -324,10 +337,10 @@ export function SettingsEadItems() {
     // Optimistic update
     const prev = new Map(configMap)
     const existing = prev.get(code)
-    prev.set(code, { id: existing?.id ?? '', item_code: code, libelle: existing?.libelle ?? null, actif, updated_at: '' })
+    prev.set(code, { id: existing?.id ?? '', item_code: code, libelle: existing?.libelle ?? null, sous_libelle: existing?.sous_libelle ?? null, actif, updated_at: '' })
     setConfigMap(prev)
 
-    const res = await upsertEadItemConfig(code, { libelle: existing?.libelle ?? null, actif })
+    const res = await upsertEadItemConfig(code, { libelle: existing?.libelle ?? null, sous_libelle: existing?.sous_libelle ?? null, actif })
     if (res.error) {
       toast.error(res.error)
       // Rollback
@@ -338,11 +351,11 @@ export function SettingsEadItems() {
     }
   }
 
-  const handleSaveLibelle = async (code: string, libelle: string) => {
+  const handleSaveLibelle = async (code: string, libelle: string, sousLibelle: string | null) => {
     const existing = configMap.get(code)
     const actif = existing ? existing.actif : true
 
-    const res = await upsertEadItemConfig(code, { libelle, actif })
+    const res = await upsertEadItemConfig(code, { libelle, sous_libelle: sousLibelle, actif })
     if (res.error) {
       toast.error(res.error)
     } else {
@@ -470,6 +483,7 @@ export function SettingsEadItems() {
                     code={item.id}
                     defaultLibelle={item.libelle}
                     sousLibelle={item.sous_libelle}
+                    hasSousLibelle={!!item.sous_libelle}
                     configMap={configMap}
                     onToggle={handleToggle}
                     onSaveLibelle={handleSaveLibelle}

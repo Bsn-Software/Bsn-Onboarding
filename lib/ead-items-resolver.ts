@@ -63,8 +63,12 @@ export function resolveReferentiel(
     })
     .map(item => {
       const cfg = configMap.get(item.id)
-      if (!cfg || cfg.libelle === null) return item
-      return { ...item, libelle: cfg.libelle }
+      if (!cfg) return item
+      return {
+        ...item,
+        libelle:      cfg.libelle      !== null ? cfg.libelle      : item.libelle,
+        sous_libelle: cfg.sous_libelle !== null ? cfg.sous_libelle : item.sous_libelle,
+      }
     })
 }
 
@@ -80,6 +84,16 @@ export function getEffectiveLibelle(
 ): string {
   const cfg = configMap.get(code)
   return cfg?.libelle ?? defaultLibelle
+}
+
+export function getEffectiveSousLibelle(
+  defaultSousLibelle: string | undefined,
+  code: string,
+  configMap: ConfigMap
+): string | undefined {
+  const cfg = configMap.get(code)
+  if (!cfg) return defaultSousLibelle
+  return cfg.sous_libelle !== null ? cfg.sous_libelle : defaultSousLibelle
 }
 
 export function isItemActif(code: string, configMap: ConfigMap): boolean {

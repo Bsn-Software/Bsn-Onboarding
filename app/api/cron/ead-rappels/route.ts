@@ -121,7 +121,6 @@ export async function GET(req: NextRequest) {
         date_cible: dateCible,
         destinataire_email: profile.email,
       })
-
       sent++
     }
   }

@@ -40,14 +40,14 @@ function getStatut(row: AbsenceDashboardRow): AbsenceStatut {
 }
 
 const STATUT_CONFIG: Record<AbsenceStatut, { label: string; color: string; bg: string; border: string; dot: string }> = {
-  en_cours:  { label: 'En cours',  color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200',  dot: 'bg-amber-500' },
-  terminee:  { label: 'Terminée',  color: 'text-slate-600',   bg: 'bg-slate-100',  border: 'border-slate-200',  dot: 'bg-slate-400' },
+  en_cours: { label: 'En cours', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', dot: 'bg-amber-500' },
+  terminee: { label: 'Terminée', color: 'text-slate-600', bg: 'bg-slate-100', border: 'border-slate-200', dot: 'bg-slate-400' },
 }
 
 const RISQUE_CONFIG: Record<NiveauRisque, { label: string; color: string; bg: string; border: string; icon: React.ElementType }> = {
-  aucun:                { label: 'Aucun risque',         color: 'text-slate-500',  bg: 'bg-slate-50',  border: 'border-slate-200', icon: CheckCircle2 },
-  remplacant_a_prevoir: { label: 'Remplaçant à prévoir', color: 'text-amber-700',  bg: 'bg-amber-50',  border: 'border-amber-200', icon: AlertTriangle },
-  mission_en_danger:    { label: 'Mission en danger',    color: 'text-red-700',    bg: 'bg-red-50',    border: 'border-red-200',   icon: ShieldAlert },
+  aucun: { label: 'Aucun risque', color: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200', icon: CheckCircle2 },
+  remplacant_a_prevoir: { label: 'Remplaçant à prévoir', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', icon: AlertTriangle },
+  mission_en_danger: { label: 'Mission en danger', color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-200', icon: ShieldAlert },
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -469,10 +469,10 @@ export function AbsencesDashboard() {
                         <span className={cn(
                           'inline-flex items-center rounded-lg px-2 py-1 text-xs font-semibold',
                           row.absence.type === 'accident_travail' ? 'bg-red-100 text-red-700' :
-                          row.absence.type === 'maladie' ? 'bg-amber-100 text-amber-700' :
-                          row.absence.type === 'conge_maternite' ? 'bg-pink-100 text-pink-700' :
-                          row.absence.type === 'conge_paternite' ? 'bg-blue-100 text-blue-700' :
-                          'bg-slate-100 text-slate-700'
+                            row.absence.type === 'maladie' ? 'bg-amber-100 text-amber-700' :
+                              row.absence.type === 'conge_maternite' ? 'bg-pink-100 text-pink-700' :
+                                row.absence.type === 'conge_paternite' ? 'bg-blue-100 text-blue-700' :
+                                  'bg-slate-100 text-slate-700'
                         )}>
                           {ABSENCE_TYPE_LABELS[row.absence.type]}
                         </span>
